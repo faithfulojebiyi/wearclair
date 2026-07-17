@@ -1,0 +1,19 @@
+/* panda css entry — the @pandacss/dev postcss plugin injects each layer here.
+   base styling (html/body, fonts, scrollbars, reset) comes from the preset's
+   globalCss + preflight. keep app-wide overrides minimal and token-driven. */
+@layer reset, base, tokens, recipes, utilities;
+
+html {
+	color-scheme: light;
+}
+
+html.dark {
+	color-scheme: dark;
+}
+
+/* pdf.js appends a hidden text-measurement <canvas class="hiddenCanvasElement">
+   to the DOM; it otherwise renders as a stray black box (appears randomly while
+   a PDF is open). Hiding it is safe — canvas measureText works with display:none. */
+canvas.hiddenCanvasElement {
+	display: none !important;
+}

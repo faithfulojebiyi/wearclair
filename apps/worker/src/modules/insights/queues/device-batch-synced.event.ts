@@ -1,0 +1,42 @@
+import { InngestFunctionDto } from '@worker/modules/event-publisher/event-publisher.dto';
+import { inngest } from '@worker/modules/event-publisher/event-publisher.service';
+import { ClassifyAndUpsertInsightsCommand } from '@worker/modules/insights/commands/classify-and-upsert-insights';
+import { MarkBatchProcessedCommand } from '@worker/modules/insights/commands/mark-batch-processed';
+import { LoadDailyStatsQuery } from '@worker/modules/insights/queries/load-daily-stats';
+
+import { EVENTS, INNGEST_OPTIONS } from '@system/queues/events.config';
+
+// queue consumer for `device/batch.synced` — derive daily insights from the tsdb
+// rollups. Three steps so each stage is independently retryable/memoized: a
+// transient tsdb read failure never recomputes the app-db writes. The event id
+// (device-batch-<id>) dedupes redeliveries, and the upsert-based derivation is
+// idempotent on top of that.
+export const deviceBatchSyncedEvent = ({
+  commandBus,
+  queryBus,
+}: InngestFunctionDto) => {
+  return inngest.createFunction(
+    {
+      id: 'compute-daily-insights',
+      ...INNGEST_OPTIONS,
+      triggers: [EVENTS.DEVICE_BATCH_SYNCED],
+    },
+    async ({ event, step }) => {
+      const stats = await step.run('load-daily-stats', async () =>
+        queryBus.execute(new LoadDailyStatsQuery(event.data)),
+      );
+
+      const { upserted } = await step.run('classify-and-upsert', async () =>
+        commandBus.execute(
+          new ClassifyAndUpsertInsightsCommand(event.data, stats),
+        ),
+      );
+
+      await step.run('mark-batch-processed', async () =>
+        commandBus.execute(new MarkBatchProcessedCommand(event.data.batchId)),
+      );
+
+      return { upserted };
+    },
+  );
+};

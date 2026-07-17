@@ -1,0 +1,103 @@
+# wearclair local backing services. The app processes (api/worker/inngest/dashboard) still
+# run via bun; this brings up a local AWS emulator — the published ministack FULL image
+# (56+ services, DuckDB-backed Athena, real RDS/ECS via the docker socket) — so no AWS
+# account is required for local dev. https://github.com/ministackorg/ministack
+#
+#   bun run infra:up                             # ministack on :4567 + creates the bucket
+#   curl http://localhost:4567/_ministack/health # reports edition: full
+#
+# Host port is 4567 (the carbonme sibling stack owns 4566) — container-internal stays 4566.
+# Postgres (TimescaleDB) is on 6543 (the TimescaleDB quickstart's non-standard port; a
+# homebrew postgres owns 5432) — container-internal stays 5432.
+
+services:
+  # canonical local postgres: one TimescaleDB container, three databases —
+  # wearclair (Prisma app DB), wearclair_mastra (mastra runtime), wearclair_tsdb
+  # (biomarker hypertables; the ONLY db that actually uses the extension).
+  tsdb:
+    image: timescale/timescaledb-ha:pg18
+    container_name: wearclair-tsdb
+    ports:
+      - '6543:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wearclair
+    volumes:
+      - tsdb-data:/home/postgres/pgdata/data
+      - ./docker/tsdb-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d wearclair']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  ministack:
+    image: ministackorg/ministack:full
+    container_name: wearclair-ministack
+    ports:
+      - '4567:4566'
+    environment:
+      GATEWAY_PORT: 4566
+      LOG_LEVEL: INFO
+      S3_PERSIST: 1
+      REDIS_HOST: ministack-redis
+      REDIS_PORT: 6379
+    volumes:
+      - ministack-s3:/tmp/ministack-data/s3
+      # RDS/ElastiCache/ECS emulation spins up REAL sibling containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      ministack-redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # ministack uses redis internally (ElastiCache/SQS/etc); not exposed to the host.
+  ministack-redis:
+    image: redis:7-alpine
+    container_name: wearclair-ministack-redis
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # one-shot: create the uploads bucket + CORS so the browser can PUT straight to S3.
+  ministack-init:
+    image: amazon/aws-cli:latest
+    container_name: wearclair-ministack-init
+    depends_on:
+      ministack:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    # entrypoint is the shell, command is its args (a bare `command: |` block would be
+    # handed to the image's default `aws` entrypoint instead).
+    entrypoint: sh
+    command:
+      - '-c'
+      - |
+        aws --endpoint-url http://ministack:4566 s3 mb s3://wearclair-uploads || true
+        aws --endpoint-url http://ministack:4566 s3api put-bucket-cors --bucket wearclair-uploads --cors-configuration '{"CORSRules":[{"AllowedOrigins":["http://localhost:3010"],"AllowedMethods":["PUT","GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["ETag"]}]}' || true
+        echo "ministack: bucket wearclair-uploads ready (CORS for http://localhost:3010)"
+    restart: 'no'
+
+volumes:
+  ministack-s3:
+  tsdb-data:
