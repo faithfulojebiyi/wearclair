@@ -54,8 +54,9 @@ export class UpsertCycleLogCommandHandler implements ICommandHandler<UpsertCycle
       });
     }
 
+    // fresh: the response must reflect the write above, not a lagging replica
     return this.queryBus.execute(
-      new GetCycleDayQuery({ date: command.dto.date }),
+      new GetCycleDayQuery({ date: command.dto.date }, true),
     );
   }
 }

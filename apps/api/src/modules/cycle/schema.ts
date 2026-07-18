@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { CyclePhaseSchema } from '@feature/cycle-insights/phase';
 
-import { dateToString } from '@system/schema/utils';
+import { dateRangeWithin, dateToString } from '@system/schema/utils';
 
 // the allowed log categories live HERE (zod), not in a db enum — adding one is a
 // one-line change, no migration. Input is validated against this; stored as a string.
@@ -101,11 +101,14 @@ export const CycleCalendarSchema = z
   .object({ days: z.array(CycleDaySchema) })
   .meta({ id: 'CycleCalendar' });
 
+// capped: the handler derives one day object per requested day, so range size —
+// not the user's data — bounds the work.
 export const GetCycleCalendarQuerySchema = z
   .object({
     from: z.iso.datetime(),
     to: z.iso.datetime(),
   })
+  .superRefine(dateRangeWithin(400))
   .meta({ id: 'GetCycleCalendarQuery' });
 
 // timeline entries: period start/end markers + symptom/mood logs
@@ -144,10 +147,13 @@ export const CycleDaySummarySchema = z
   .meta({ id: 'CycleDaySummary' });
 
 // Edit-period SAVE: replace the logged period days within [from, to] with `dates`.
+// same 400d cap as the calendar — the command returns the recalculated calendar
+// for the window, which derives one day object per requested day.
 export const SetPeriodSchema = z
   .object({
     from: z.iso.datetime(),
     to: z.iso.datetime(),
-    dates: z.array(z.iso.datetime()),
+    dates: z.array(z.iso.datetime()).max(400),
   })
+  .superRefine(dateRangeWithin(400))
   .meta({ id: 'SetPeriod' });

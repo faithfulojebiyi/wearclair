@@ -34,8 +34,13 @@ export const useVitalsSync = (deviceId: string | undefined): void => {
 
       inFlight.current = true;
 
+      // deterministic idempotency key: a retry of the same rows reuses the same
+      // server-side batch (and event id) instead of minting a duplicate
+      const clientBatchId = `batch-${queued[0].ts}-${queued[queued.length - 1].ts}-${queued.length}`;
+
       try {
         await devicesControllerSyncDevice(deviceId, {
+          clientBatchId,
           samples: queued.map((sample) => ({
             ts: new Date(sample.ts).toISOString(),
             metric: sample.metric,

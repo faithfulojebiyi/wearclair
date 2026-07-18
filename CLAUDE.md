@@ -29,6 +29,8 @@ wearclair/
 
 - **api** — handles client HTTP requests; auth/ALS/cache available; publishes Inngest events.
 - **worker** — runs background jobs triggered by Inngest events. No ALS (it is HTTP-request-scoped).
+  Thin Inngest functions dispatch to DI-resolved CQRS buses (passed in from `main.ts`) — business
+  logic lives in command/query handlers, never inline in the function.
 - Both apps register their **own** Inngest client (id `api` / `worker`) and serve `/api/inngest`.
 
 ## Build and Development Commands

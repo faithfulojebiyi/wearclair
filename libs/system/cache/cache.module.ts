@@ -14,15 +14,20 @@ import { CacheService } from './cache.service';
     NCacheModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
+        const redisUrl = configService.get<string>('APP_REDIS_URL');
+
+        // dev without redis falls back to in-memory Keyv so the app still boots;
+        // env validation requires APP_REDIS_URL outside dev, so deployed envs
+        // never silently lose the shared cache.
         return {
           isGlobal: true,
           stores: [
-            new Keyv({
-              store: new KeyvValkey({
-                uri: configService.get('APP_REDIS_URL'),
-              }),
-              namespace: '{same-slot}',
-            }),
+            redisUrl
+              ? new Keyv({
+                  store: new KeyvValkey({ uri: redisUrl }),
+                  namespace: '{same-slot}',
+                })
+              : new Keyv({ namespace: '{same-slot}' }),
           ],
         };
       },

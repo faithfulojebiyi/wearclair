@@ -28,9 +28,12 @@ export const DeviceListSchema = z
 
 // the real ingest contract — what a BLE-synced device batch looks like on the wire.
 // 20k samples ≈ a full day of 5 metrics at 5-minute resolution, with headroom.
+// clientBatchId: client-generated idempotency key — retries of the same batch reuse
+// the SyncBatch row and event id instead of minting duplicates.
 export const IngestBatchSchema = z
   .object({
     samples: z.array(biomarkerSampleSchema).min(1).max(20000),
+    clientBatchId: z.string().min(8).max(128).optional(),
   })
   .meta({ id: 'IngestBatch' });
 

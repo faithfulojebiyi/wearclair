@@ -1,23 +1,27 @@
 import { Platform } from 'react-native';
 
-// web-only bearer-token store. On native the better-auth expo plugin persists the
-// session and getCookie() drives auth, so this is a no-op there. On web there is no
-// usable cookie jar for cross-origin JS (the Cookie header is forbidden), so we
-// capture the session token from the sign-in response and replay it as a Bearer
-// header. localStorage survives reloads, so the web session persists too.
-const KEY = 'wearclair.session_token';
+// web-only bearer token, held in MEMORY for the lifetime of the page. the durable
+// web auth path is the browser cookie jar (axios withCredentials + the api's
+// credentialed CORS allowlist) — the in-memory token only bridges the sign-in
+// response until the cookie lands. session tokens for health data don't belong in
+// localStorage, where any script on the page can read them. on native the
+// better-auth expo plugin persists the session in SecureStore, so this is a no-op.
+const LEGACY_KEY = 'wearclair.session_token';
+
+let sessionToken: string | null = null;
+
+// one-time cleanup of tokens persisted by earlier builds
+if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+  localStorage.removeItem(LEGACY_KEY);
+}
 
 export const setToken = (token: string | null): void => {
   if (Platform.OS !== 'web') {
     return;
   }
 
-  if (token) {
-    localStorage.setItem(KEY, token);
-  } else {
-    localStorage.removeItem(KEY);
-  }
+  sessionToken = token;
 };
 
 export const getToken = (): string | null =>
-  Platform.OS === 'web' ? localStorage.getItem(KEY) : null;
+  Platform.OS === 'web' ? sessionToken : null;

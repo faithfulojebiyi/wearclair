@@ -8,6 +8,9 @@ import { readReplicas } from '@prisma/extension-read-replicas';
 export class AppPrismaProvider extends AppPrismaClient implements OnModuleInit {
   private static initialized = false;
 
+  // the replica-extended client — its $disconnect tears down the replica pool too
+  private extended?: { $disconnect(): Promise<void> };
+
   constructor() {
     super({
       adapter: new PrismaPg({
@@ -29,10 +32,12 @@ export class AppPrismaProvider extends AppPrismaClient implements OnModuleInit {
     }
   }
 
+  // runs only when the app calls enableShutdownHooks() (both mains do) — disconnect
+  // through the extended client so the replica pool closes with the primary.
   async onModuleDestroy() {
     if (AppPrismaProvider.initialized) {
       AppPrismaProvider.initialized = false;
-      await this.$disconnect();
+      await (this.extended ?? this).$disconnect();
     }
   }
 
@@ -53,7 +58,11 @@ export class AppPrismaProvider extends AppPrismaClient implements OnModuleInit {
       errorFormat: 'minimal',
     });
 
-    return this.$extends(readReplicas({ replicas: [replicaClient] }));
+    const extended = this.$extends(readReplicas({ replicas: [replicaClient] }));
+
+    this.extended = extended;
+
+    return extended;
   }
 }
 

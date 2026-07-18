@@ -68,11 +68,12 @@ export class SetPeriodCommandHandler implements ICommandHandler<SetPeriodCommand
       }
     });
 
+    // fresh: the response must reflect the writes above, not a lagging replica
     return this.queryBus.execute(
-      new GetCycleCalendarQuery({
-        from: command.dto.from,
-        to: command.dto.to,
-      }),
+      new GetCycleCalendarQuery(
+        { from: command.dto.from, to: command.dto.to },
+        true,
+      ),
     );
   }
 }

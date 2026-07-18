@@ -10,7 +10,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRowIds, useValue } from 'tinybase/ui-react';
 
-import { signOut, useSession } from '@/modules/auth/auth-client';
+import { useSession } from '@/modules/auth/auth-client';
+import { performSignOut } from '@/modules/auth/sign-out';
 import { connectBand, disconnectBand } from '@/modules/band/band';
 import { DeviceCard } from '@/modules/band/components/device-card';
 import { PipelineExplainer } from '@/modules/band/components/pipeline-explainer';
@@ -85,7 +86,7 @@ export default function DeviceScreen() {
         <PipelineExplainer />
 
         <Pressable
-          onPress={() => signOut()}
+          onPress={() => void performSignOut()}
           style={({ pressed }) => [styles.signOut, pressed && { opacity: 0.6 }]}
         >
           <LogOut color={c.muted} size={16} strokeWidth={2.2} />

@@ -62,35 +62,39 @@ interface SeriesRow {
 export class BiomarkerStore {
   constructor(private readonly pool: TsdbPool) {}
 
-  // single-round-trip batch insert; the unique index + deterministic generator make
-  // re-ingest of any window a no-op (ON CONFLICT DO NOTHING).
+  // chunked batch insert inside ONE transaction: either every sample lands or none
+  // do, so a FAILED batch truly means nothing persisted and a retry re-counts the
+  // full batch. the unique index + deterministic generator make re-ingest of any
+  // window a no-op (ON CONFLICT DO NOTHING).
   async insertBatch(
     userId: string,
     deviceId: string,
     samples: RawSample[],
   ): Promise<{ inserted: number }> {
-    let inserted = 0;
+    return this.pool.withTransaction(async (query) => {
+      let inserted = 0;
 
-    for (let offset = 0; offset < samples.length; offset += INSERT_CHUNK) {
-      const chunk = samples.slice(offset, offset + INSERT_CHUNK);
+      for (let offset = 0; offset < samples.length; offset += INSERT_CHUNK) {
+        const chunk = samples.slice(offset, offset + INSERT_CHUNK);
 
-      const result = await this.pool.query(
-        `INSERT INTO raw_biomarker (ts, user_id, device_id, metric, value)
-         SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[])
-         ON CONFLICT DO NOTHING`,
-        [
-          chunk.map((sample) => sample.ts.toISOString()),
-          chunk.map(() => userId),
-          chunk.map(() => deviceId),
-          chunk.map((sample) => sample.metric),
-          chunk.map((sample) => sample.value),
-        ],
-      );
+        const result = await query(
+          `INSERT INTO raw_biomarker (ts, user_id, device_id, metric, value)
+           SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[])
+           ON CONFLICT DO NOTHING`,
+          [
+            chunk.map((sample) => sample.ts.toISOString()),
+            chunk.map(() => userId),
+            chunk.map(() => deviceId),
+            chunk.map((sample) => sample.metric),
+            chunk.map((sample) => sample.value),
+          ],
+        );
 
-      inserted += result.rowCount ?? 0;
-    }
+        inserted += result.rowCount ?? 0;
+      }
 
-    return { inserted };
+      return { inserted };
+    });
   }
 
   async querySeries(args: {

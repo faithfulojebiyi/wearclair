@@ -11,9 +11,8 @@ import {
   UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-
-import { Public } from '@system/auth/auth.decorators';
 
 import { MASTRA_OPTIONS, MASTRA_ROUTE_BASE } from '../constants';
 import { MastraExceptionFilter } from '../filters/mastra-exception.filter';
@@ -57,13 +56,14 @@ function toWebRequest(req: FastifyRequest): globalThis.Request {
  * Routes are matched against SERVER_ROUTES from @mastra/server.
  *
  * Scoped to a base path (`MASTRA_ROUTE_BASE`) rather than a root catch-all, so
- * the controller never shadows the rest of the wearclair app. Marked with
- * wearclair's `@Public` so the global SessionGuard defers to Mastra's own auth
- * (MastraRouteGuard); rate limiting + auth are applied only to matched Mastra
- * routes and do not affect the rest of the app.
+ * the controller never shadows the rest of the wearclair app. The global
+ * SessionGuard applies — every Mastra route requires a Better Auth session —
+ * and MastraRouteGuard adds per-IP rate limiting (plus Mastra's own auth when
+ * configured). Excluded from the OpenAPI doc so the catch-all never leaks into
+ * generated API clients.
  */
 @Controller(MASTRA_ROUTE_BASE)
-@Public()
+@ApiExcludeController()
 @UseInterceptors(RequestTrackingInterceptor, StreamingInterceptor)
 @UseFilters(MastraExceptionFilter)
 @UseGuards(MastraRouteGuard)

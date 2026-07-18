@@ -17,8 +17,13 @@ import { CycleCalendarDto, GetCycleCalendarQueryDto } from '../dto/cycle.dto';
 
 // per-day calendar state, derived (not stored): real DailyInsight for past days,
 // the user's period model for the future. Logged period days are authoritative.
+// `fresh` routes reads to the primary — commands that write then return this
+// query's result must not see a lagging replica. GETs stay replica-eligible.
 export class GetCycleCalendarQuery extends Query<CycleCalendarDto> {
-  constructor(public readonly dto: GetCycleCalendarQueryDto) {
+  constructor(
+    public readonly dto: GetCycleCalendarQueryDto,
+    public readonly fresh = false,
+  ) {
     super();
   }
 }
@@ -40,18 +45,22 @@ export class GetCycleCalendarQueryHandler implements IQueryHandler<GetCycleCalen
     const from = new Date(query.dto.from);
     const to = new Date(query.dto.to);
 
-    const insights = await this.appPrismaService.dailyInsight.findMany({
+    const db = query.fresh
+      ? this.appPrismaService.$primary()
+      : this.appPrismaService;
+
+    const insights = await db.dailyInsight.findMany({
       where: { userId, date: { gte: from, lte: to } },
       orderBy: { date: 'asc' },
     });
 
-    const latest = await this.appPrismaService.dailyInsight.findFirst({
+    const latest = await db.dailyInsight.findFirst({
       where: { userId },
       orderBy: { date: 'desc' },
     });
 
     // ALL period logs — needed to derive cycle length + anchor, not just in-range
-    const periodLogs = await this.appPrismaService.cycleLog.findMany({
+    const periodLogs = await db.cycleLog.findMany({
       where: { userId, type: 'period' },
       select: { date: true },
     });

@@ -18,6 +18,13 @@ export const store: Store = createStore()
 export const LATEST_TABLE = 'latest';
 export const QUEUE_TABLE = 'queue';
 
+// retention limits must hold while the app RUNS, not just across restarts — an
+// offline app kept open would otherwise grow past them. pruning scans the queue,
+// so it's throttled rather than run on every emit.
+const PRUNE_INTERVAL_MS = 60_000;
+
+let lastPruneTs = 0;
+
 // append one instant's worth of vitals: newest-per-metric for the UI, plus the
 // upload queue.
 export const recordVitals = (ts: number, vitals: Vital[]): void => {
@@ -29,6 +36,11 @@ export const recordVitals = (ts: number, vitals: Vital[]): void => {
 
     store.setValue('lastEmitTs', ts);
   });
+
+  if (ts - lastPruneTs >= PRUNE_INTERVAL_MS) {
+    lastPruneTs = ts;
+    pruneQueue(ts);
+  }
 };
 
 export interface QueuedSample {
@@ -64,6 +76,51 @@ export const clearQueued = (rowIds: string[], syncedTs: number): void => {
   });
 };
 
+// retention guard for the persisted queue: extended offline periods must not grow
+// health data on-device without bound. drops rows past MAX_AGE, then the oldest
+// rows over MAX_ROWS.
+const QUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const QUEUE_MAX_ROWS = 100_000;
+
+export const pruneQueue = (now: number = Date.now()): void => {
+  const rows = getQueued();
+  const cutoff = now - QUEUE_MAX_AGE_MS;
+
+  const expired = rows.filter((row) => row.ts < cutoff);
+  const kept = rows.filter((row) => row.ts >= cutoff);
+  const overflow =
+    kept.length > QUEUE_MAX_ROWS
+      ? kept
+          .sort((a, b) => a.ts - b.ts)
+          .slice(0, kept.length - QUEUE_MAX_ROWS)
+      : [];
+
+  const drop = [...expired, ...overflow];
+
+  if (drop.length === 0) {
+    return;
+  }
+
+  store.transaction(() => {
+    for (const row of drop) {
+      store.delRow(QUEUE_TABLE, row.rowId);
+    }
+  });
+};
+
+// user-scoped device state (latest readings + unsynced queue + counters) — cleared
+// on sign-out so the next account never sees the previous one's vitals. autoSave
+// propagates the wipe to the platform persister.
+export const clearAllLocalData = (): void => {
+  store.transaction(() => {
+    store.delTables();
+    store.setValue('connected', false);
+    store.setValue('lastEmitTs', 0);
+    store.setValue('lastSyncTs', 0);
+    store.setValue('syncedTotal', 0);
+  });
+};
+
 // best-effort persistence: browser storage on web, expo-sqlite on native — resolved
 // via the platform-split local-persister(.web).ts twins so the wrong platform's
 // driver never enters the bundle (Metro statically bundles even dynamic imports).
@@ -81,6 +138,8 @@ export const initPersistence = async (): Promise<void> => {
     const { createPlatformPersister } = await import('./local-persister');
     const persister = await createPlatformPersister(store);
     await persister.load();
+    // apply retention to whatever a previous session left behind
+    pruneQueue();
     await persister.startAutoSave();
   } catch {
     persisterStarted = false;

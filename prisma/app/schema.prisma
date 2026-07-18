@@ -102,13 +102,6 @@ model Verification {
 // are no cross-database foreign keys.
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum SyncBatchStatus {
-  RECEIVED
-  PROCESSED
-
-  @@map("sync_batch_status")
-}
-
 model Device {
   id           String      @id @default(uuid())
   userId       String      @map("user_id")
@@ -130,13 +123,28 @@ model SyncBatch {
   device      Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   // denormalized so batch queries don't join through devices
   userId      String          @map("user_id")
+  // client-supplied idempotency key — retries of the same client batch reuse the
+  // row (and the deterministic event id) instead of minting a duplicate
+  clientBatchId   String?     @map("client_batch_id")
   windowStart DateTime        @map("window_start")
   windowEnd   DateTime        @map("window_end")
   sampleCount Int             @map("sample_count")
-  status      SyncBatchStatus @default(RECEIVED)
+  // ingest lifecycle: RECEIVED → RAW_WRITTEN → PUBLISHED → PROCESSED (FAILED = raw
+  // write failed). plain string validated by zod (SyncBatchStatusSchema) at the
+  // boundary — not a db enum, so changing the set never needs an ALTER TYPE migration.
+  // RAW_WRITTEN rows older than the republish window are swept by the recovery cron.
+  status      String          @default("RECEIVED")
+  // lifecycle timestamps + publish attempts, for the recovery cron and ops queries
+  rawWrittenAt    DateTime?   @map("raw_written_at")
+  publishedAt     DateTime?   @map("published_at")
+  processedAt     DateTime?   @map("processed_at")
+  publishAttempts Int         @default(0) @map("publish_attempts")
   createdAt   DateTime        @default(now()) @map("created_at")
 
+  @@unique([deviceId, clientBatchId])
   @@index([userId, createdAt])
+  // recovery cron scans by status + age
+  @@index([status, createdAt])
   @@map("sync_batches")
 }
 

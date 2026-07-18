@@ -18,8 +18,13 @@ import { CycleDaySummaryDto, GetCycleDayQueryDto } from '../dto/cycle.dto';
 
 // one day's derived state + every log for that day. drives the Track screen prefill
 // and the calendar's selected-day card. same derivation as the calendar grid.
+// `fresh` routes reads to the primary — commands that write then return this
+// query's result must not see a lagging replica. GETs stay replica-eligible.
 export class GetCycleDayQuery extends Query<CycleDaySummaryDto> {
-  constructor(public readonly dto: GetCycleDayQueryDto) {
+  constructor(
+    public readonly dto: GetCycleDayQueryDto,
+    public readonly fresh = false,
+  ) {
     super();
   }
 }
@@ -40,21 +45,25 @@ export class GetCycleDayQueryHandler implements IQueryHandler<GetCycleDayQuery> 
 
     const day = startOfDay(new Date(query.dto.date));
 
-    const insight = await this.appPrismaService.dailyInsight.findFirst({
+    const db = query.fresh
+      ? this.appPrismaService.$primary()
+      : this.appPrismaService;
+
+    const insight = await db.dailyInsight.findFirst({
       where: { userId, date: day },
     });
 
-    const latest = await this.appPrismaService.dailyInsight.findFirst({
+    const latest = await db.dailyInsight.findFirst({
       where: { userId },
       orderBy: { date: 'desc' },
     });
 
-    const periodLogs = await this.appPrismaService.cycleLog.findMany({
+    const periodLogs = await db.cycleLog.findMany({
       where: { userId, type: 'period' },
       select: { date: true },
     });
 
-    const logs = await this.appPrismaService.cycleLog.findMany({
+    const logs = await db.cycleLog.findMany({
       where: { userId, date: day },
       orderBy: { type: 'asc' },
     });

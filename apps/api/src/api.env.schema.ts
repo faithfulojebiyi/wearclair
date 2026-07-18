@@ -41,7 +41,7 @@ export const envSchema: Joi.ObjectSchema<ApiEnvInterface> = Joi.object({
   // better auth (required in staging/prod; optional in dev)
   BETTER_AUTH_SECRET: OPTIONAL_STRING_IN_DEV_SCHEMA,
   BETTER_AUTH_URL: Joi.string().optional(),
-  BETTER_AUTH_TRUSTED_ORIGINS: Joi.string().optional(),
+  BETTER_AUTH_TRUSTED_ORIGINS: OPTIONAL_STRING_IN_DEV_SCHEMA,
 
   // resend
   RESEND_API_KEY: OPTIONAL_STRING_IN_DEV_SCHEMA,

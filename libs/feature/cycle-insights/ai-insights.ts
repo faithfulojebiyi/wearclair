@@ -8,6 +8,8 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 
+import { Logger } from '@nestjs/common';
+
 import { PerDayInsight } from './classify';
 import {
   HealthInsightDraft,
@@ -16,6 +18,8 @@ import {
 
 // default to the current Claude model; override with AI_INSIGHTS_MODEL.
 const MODEL = process.env.AI_INSIGHTS_MODEL ?? 'claude-opus-4-8';
+
+const logger = new Logger('ai-insights');
 
 const draftSchema = z.object({
   insights: z
@@ -94,8 +98,15 @@ export const generateHealthInsightDrafts = async (
     });
 
     return object.insights;
-  } catch {
-    // gateway/key/parse failure — deterministic rules keep the feed alive
+  } catch (error) {
+    // gateway/key/parse failure — deterministic rules keep the feed alive, but
+    // the failure must be visible: a bad key or model id is otherwise silent forever
+    const reason = error instanceof Error ? error.message : String(error);
+
+    logger.warn(
+      `AI insight generation failed (model=${MODEL}) — falling back to rule engine: ${reason}`,
+    );
+
     return buildHealthInsightDrafts(days);
   }
 };

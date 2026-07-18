@@ -1,10 +1,19 @@
 import { z } from 'zod';
 
-import { dateToString } from '@system/schema/utils';
+import { dateRangeWithin, dateToString } from '@system/schema/utils';
 import {
+  SeriesBucket,
   biomarkerMetricSchema,
   seriesBucketSchema,
 } from '@system/timeseries/timeseries.schema';
+
+// per-bucket range caps: 5m hits the raw hypertable (expensive), so a day max;
+// the 1h/1d continuous aggregates tolerate wider windows.
+const BUCKET_MAX_DAYS: Record<SeriesBucket, number> = {
+  '5m': 1,
+  '1h': 31,
+  '1d': 400,
+};
 
 export const GetSeriesQuerySchema = z
   .object({
@@ -13,6 +22,9 @@ export const GetSeriesQuerySchema = z
     from: z.iso.datetime(),
     to: z.iso.datetime(),
   })
+  .superRefine((value, ctx) =>
+    dateRangeWithin(BUCKET_MAX_DAYS[value.bucket])(value, ctx),
+  )
   .meta({ id: 'GetSeriesQuery' });
 
 export const SeriesPointSchema = z

@@ -10,6 +10,7 @@ import { auth } from '@system/auth/auth';
 
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { CommandBus } from '@nestjs/cqrs';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -44,6 +45,9 @@ async function bootstrap() {
 
   app.useLogger(app.get(Logger));
 
+  // SIGTERM/SIGINT run onModuleDestroy — prisma (primary + replica) disconnects cleanly
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
 
   await app.register(fastifyMultipart, {
@@ -63,8 +67,12 @@ async function bootstrap() {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+  // fail closed outside development: no configured origins → no cross-origin
+  // access. never fall back to credentialed reflection of arbitrary origins.
+  const isDev = configService.get<string>('APP_ENV') === 'development';
+
   app.enableCors({
-    origin: allowedOrigins.length ? allowedOrigins : true,
+    origin: allowedOrigins.length ? allowedOrigins : isDev,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
@@ -80,6 +88,7 @@ async function bootstrap() {
   // mount inngest on the underlying fastify instance
   const fastifyInstance = app.getHttpAdapter().getInstance();
   const apiService = app.get(ApiService);
+  const commandBus = app.get(CommandBus);
 
   // mount Better Auth (handles /api/auth/*) on the underlying fastify instance —
   // a raw route bypasses the Nest pipe/interceptor/guard stack.
@@ -117,7 +126,7 @@ async function bootstrap() {
     url: `${apiPrefix}api/inngest`,
     handler: serve({
       client: inngest,
-      functions: getInngestRegistry({ apiService }),
+      functions: getInngestRegistry({ apiService, commandBus }),
     }),
   });
 

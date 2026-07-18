@@ -36,6 +36,9 @@ async function bootstrap() {
 
   app.useLogger(app.get(Logger));
 
+  // SIGTERM/SIGINT run onModuleDestroy — prisma (primary + replica) disconnects cleanly
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
 
   await app.register(fastifyMultipart, {
@@ -46,12 +49,7 @@ async function bootstrap() {
 
   app.setGlobalPrefix(apiPrefix);
 
-  app.enableCors({
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
-    exposedHeaders: ['x-request-id'],
-  });
+  // no CORS: the worker serves only Inngest (server-to-server) — browsers never call it.
 
   await app.register(helmet);
   await app.register(cookie);

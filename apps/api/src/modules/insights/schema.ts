@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { CyclePhaseSchema } from '@feature/cycle-insights/phase';
 
-import { dateToString } from '@system/schema/utils';
+import { dateRangeWithin, dateToString } from '@system/schema/utils';
 
 // re-exported so existing importers keep resolving it from here
 export { CyclePhaseSchema };
@@ -44,6 +44,7 @@ export const GetInsightRangeQuerySchema = z
     from: z.iso.datetime(),
     to: z.iso.datetime(),
   })
+  .superRefine(dateRangeWithin(400))
   .meta({ id: 'GetInsightRangeQuery' });
 
 // the Insights feed — worker-generated (AI/rule) health insight cards. category and

@@ -44,9 +44,11 @@ export class SimulateSyncCommandHandler implements ICommandHandler<SimulateSyncC
       throw new UnauthorizedException();
     }
 
-    const device = await this.appPrismaService.device.findFirst({
-      where: { id: command.deviceId, userId },
-    });
+    // $primary(): ownership check must see a just-registered device + the freshest
+    // lastSyncedAt (the sync window is derived from it)
+    const device = await this.appPrismaService
+      .$primary()
+      .device.findFirst({ where: { id: command.deviceId, userId } });
 
     if (!device) {
       throw new NotFoundException('device not found');

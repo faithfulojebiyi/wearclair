@@ -42,8 +42,9 @@ Inngest functions so new code matches what already ships.
 
 - **`apps/api`** — HTTP API. Controllers + CQRS handlers. ALS request context. Publishes + serves
   Inngest functions. Root module: `apps/api/src/api.module.ts`.
-- **`apps/worker`** — background worker. Serves + consumes Inngest functions. No ALS, no CQRS bus
-  required. Root module: `apps/worker/src/worker.module.ts`.
+- **`apps/worker`** — background worker. Serves + consumes Inngest functions. No ALS. Thin Inngest
+  functions dispatch to DI-resolved `CommandBus`/`QueryBus` (passed in from `main.ts`); business logic
+  lives in the handlers. Root module: `apps/worker/src/worker.module.ts`.
 
 ## Module layout (api feature)
 
@@ -181,8 +182,11 @@ export const myJob = (deps: { workerService: WorkerService }) =>
   );
 ```
 
-Register it in that app's `inngest.registry.ts`. Inngest functions are plain functions — do **not** use
-`@nestjs/cqrs` inside them; resolve services from DI in the app's `main.ts` and pass them in.
+Register it in that app's `inngest.registry.ts`. Inngest functions are plain functions kept THIN:
+resolve dependencies (services or the `CommandBus`/`QueryBus`) from DI in the app's `main.ts` and pass
+them in via `deps`. Dispatching to CQRS handlers from inside a function is the intended pattern —
+business logic lives in the handlers, never inline in the function. Never use ALS inside an Inngest
+function (no HTTP request scope); identity travels in the typed event data.
 
 ## Build & verify
 

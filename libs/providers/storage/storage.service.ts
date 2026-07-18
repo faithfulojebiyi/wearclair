@@ -34,12 +34,28 @@ function buildS3Config(config: ConfigService): S3Config {
 }
 
 // storage via StorageSDK — one env-driven, S3-compatible adapter covers AWS S3,
-// Tigris, Cloudflare R2, and MinIO. Extends `Storage` so callers use the SDK API
-// directly (upload / download / head / url / uploadUrl / delete). Native Tigris
-// snapshots + forks (the agent-run sandbox) come later via the `tigris` adapter.
+// Tigris, Cloudflare R2, and MinIO. Use `client` for the SDK API (upload /
+// download / head / url / uploadUrl / delete). Native Tigris snapshots + forks
+// (the agent-run sandbox) come later via the `tigris` adapter.
+//
+// S3_BUCKET is optional in dev — the client is built lazily so an unconfigured
+// dev env still boots; first use throws the clear config error. Outside dev the
+// constructor builds eagerly, so a misconfigured deploy fails at startup.
 @Injectable()
-export class StorageService extends Storage {
-  constructor(configService: ConfigService) {
-    super({ adapter: s3(buildS3Config(configService)) });
+export class StorageService {
+  private storage?: Storage;
+
+  constructor(private readonly configService: ConfigService) {
+    if (this.configService.get<string>('APP_ENV') !== 'development') {
+      void this.client;
+    }
+  }
+
+  get client(): Storage {
+    this.storage ??= new Storage({
+      adapter: s3(buildS3Config(this.configService)),
+    });
+
+    return this.storage;
   }
 }
