@@ -152,7 +152,20 @@ export const classifyCycleDays = (stats: DailyStat[]): PerDayInsight[] => {
     return window.length >= 3 ? mean(window) : undefined;
   };
 
-  return days.map((day, index) => {
+  return days.flatMap((day, index) => {
+    // withhold partial sensor days (ordinary BLE dropout): padding a missing
+    // vital with zero would mint a medically nonsensical record (resting HR 0)
+    // that still looks valid downstream. the day keeps participating in the
+    // analysis above (temperature latch, onsets, baselines, day indexing) —
+    // only its own insight is suppressed.
+    if (
+      day.temp === undefined ||
+      day.hr === undefined ||
+      day.hrv === undefined
+    ) {
+      return [];
+    }
+
     // cycle day: distance from the most recent onset at or before this day; before
     // the first detected onset, count backward from it
     let cycleDay: number;
@@ -182,9 +195,7 @@ export const classifyCycleDays = (stats: DailyStat[]): PerDayInsight[] => {
       phase = CyclePhase.FOLLICULAR;
     }
 
-    const temp = day.temp ?? 0;
-    const hr = day.hr ?? 0;
-    const hrv = day.hrv ?? 0;
+    const { temp, hr, hrv } = day;
 
     const tempBaseline = readinessBaseline(index, (d) => d.temp);
     const hrBaseline = readinessBaseline(index, (d) => d.hr);

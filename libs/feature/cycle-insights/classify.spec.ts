@@ -100,6 +100,41 @@ describe('classifyCycleDays', () => {
     }
   });
 
+  it('withholds partial sensor days instead of zero-filling vitals', () => {
+    // ordinary dropout: one mid-series day loses every sensor except skin temp
+    const dropDay = new Date(FROM.getTime() + 30 * DAY_MS)
+      .toISOString()
+      .slice(0, 10);
+    const partial = stats.filter(
+      (stat) =>
+        stat.day.toISOString().slice(0, 10) !== dropDay ||
+        stat.metric === 'skin_temp',
+    );
+
+    const insights = classifyCycleDays(partial);
+
+    // the partial day is withheld entirely — no record with resting HR 0
+    expect(
+      insights.some((i) => i.date.toISOString().slice(0, 10) === dropDay),
+    ).toBe(false);
+
+    // neighboring complete days still classify
+    expect(insights.length).toBe(classifyCycleDays(stats).length - 1);
+
+    // and no zero-filled vitals leak out anywhere
+    for (const insight of insights) {
+      expect(insight.basalTempC).toBeGreaterThan(0);
+      expect(insight.restingHrBpm).toBeGreaterThan(0);
+      expect(insight.hrvRmssdMs).toBeGreaterThan(0);
+    }
+  });
+
+  it('returns no insights when only one classifier metric exists at all', () => {
+    const tempOnly = stats.filter((stat) => stat.metric === 'skin_temp');
+
+    expect(classifyCycleDays(tempOnly)).toEqual([]);
+  });
+
   it('produces bounded readiness with plausible per-day fields', () => {
     const insights = classifyCycleDays(stats);
 
