@@ -2,6 +2,7 @@ import { InngestFunctionDto } from '@worker/modules/event-publisher/event-publis
 import { inngest } from '@worker/modules/event-publisher/event-publisher.service';
 import { ClassifyAndUpsertInsightsCommand } from '@worker/modules/insights/commands/classify-and-upsert-insights';
 import { MarkBatchProcessedCommand } from '@worker/modules/insights/commands/mark-batch-processed';
+import { RefreshRollupsCommand } from '@worker/modules/insights/commands/refresh-rollups';
 import { LoadDailyStatsQuery } from '@worker/modules/insights/queries/load-daily-stats';
 
 import { EVENTS, INNGEST_OPTIONS } from '@system/queues/events.config';
@@ -22,6 +23,13 @@ export const deviceBatchSyncedEvent = ({
       triggers: [EVENTS.DEVICE_BATCH_SYNCED],
     },
     async ({ event, step }) => {
+      // an offline/late batch lands below the cagg watermark and is invisible to
+      // the real-time aggregate — refresh first so the daily read actually sees
+      // this batch before it is marked PROCESSED
+      await step.run('refresh-rollups', async () =>
+        commandBus.execute(new RefreshRollupsCommand()),
+      );
+
       const stats = await step.run('load-daily-stats', async () =>
         queryBus.execute(new LoadDailyStatsQuery(event.data)),
       );

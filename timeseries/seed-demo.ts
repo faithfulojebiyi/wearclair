@@ -132,14 +132,11 @@ try {
     `raw samples: ${samples.length} generated, ${inserted} inserted (rest deduped)`,
   );
 
-  // 4. materialize the rollups now (outside any transaction) so charts have
-  //    history immediately instead of waiting for the refresh policies
-  await pool.query(
-    `CALL refresh_continuous_aggregate('biomarker_1h', NULL, NULL)`,
-  );
-  await pool.query(
-    `CALL refresh_continuous_aggregate('biomarker_1d', NULL, NULL)`,
-  );
+  // 4. materialize the rollups now so charts have history immediately instead of
+  //    waiting for the refresh policies. stops at the current bucket start (never
+  //    NULL/now): materializing the incomplete bucket would put the cagg watermark
+  //    in the future, hiding later live-sync samples from the real-time union.
+  await store.refreshRollups();
 
   // 5. derive insights directly (same pure classifier the worker uses — no queue
   //    round-trip needed for seeding)

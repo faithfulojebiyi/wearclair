@@ -56,3 +56,32 @@ describe('BiomarkerStore.insertBatch atomicity', () => {
     );
   });
 });
+
+describe('BiomarkerStore.refreshRollups', () => {
+  it('refreshes both rollups outside any transaction, never past the current bucket', async () => {
+    const pool = makePool();
+    // @ts-expect-error — minimal fake pool for the store under test
+    const store = new BiomarkerStore(pool);
+
+    await store.refreshRollups();
+
+    // CALL refresh_continuous_aggregate cannot run inside a transaction
+    expect(pool.withTransaction).not.toHaveBeenCalled();
+    expect(pool.poolQuery).toHaveBeenCalledTimes(2);
+
+    const statements = pool.poolQuery.mock.calls.map(
+      // @ts-expect-error — mock call args are loosely typed
+      (call) => call[0] as string,
+    );
+    expect(statements[0]).toContain(`'biomarker_1h'`);
+    expect(statements[1]).toContain(`'biomarker_1d'`);
+
+    for (const statement of statements) {
+      // end bound stops at the current bucket start — a NULL end would
+      // materialize the incomplete bucket and push the watermark into the
+      // future, hiding later live-sync samples from the real-time union
+      expect(statement).toContain('time_bucket');
+      expect(statement).not.toMatch(/NULL\s*\)/i);
+    }
+  });
+});
