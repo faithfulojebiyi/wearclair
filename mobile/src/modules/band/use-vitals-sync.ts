@@ -7,9 +7,7 @@ import { batchKeyFor } from './utils';
 
 const FLUSH_MS = 8000;
 const MAX_BATCH = 500;
-// fallback refetch of worker-derived views when the realtime signal doesn't
-// arrive (dev server down, websocket blocked) — late enough for derivation to
-// have finished in the common case
+// fallback refetch of derived views when the realtime signal doesn't arrive
 const DERIVED_FALLBACK_MS = 10_000;
 
 // background sync engine: every FLUSH_MS, drain the local unsynced queue and push it
@@ -30,11 +28,10 @@ export const useVitalsSync = (
       return;
     }
 
-    // derived views (insights, cycle) are computed by the worker AFTER the sync
-    // request returns — an immediate refetch races it and can cache the old
-    // state. The realtime signal (use-sync-updates) refreshes them the moment
-    // derivation lands; this delayed fallback keeps a one-off sync from leaving
-    // them stale forever when realtime is unreachable.
+    /**
+     * derived views are computed AFTER the sync response — the realtime signal
+     * (use-sync-updates) refetches them; this timer covers realtime being down.
+     */
     const scheduleDerivedRefetch = () => {
       if (fallbackTimer.current) {
         clearTimeout(fallbackTimer.current);
@@ -51,9 +48,7 @@ export const useVitalsSync = (
         return;
       }
 
-      // never upload a queue this account doesn't own — a previous user's
-      // samples must not land on the current user's device, even in the window
-      // before the account-isolation claim settles
+      // never upload a queue this account doesn't own
       if (store.getValue('ownerUserId') !== userId) {
         return;
       }
@@ -66,9 +61,7 @@ export const useVitalsSync = (
 
       inFlight.current = true;
 
-      // deterministic content-derived idempotency key: a retry of the same rows
-      // reuses the same server-side batch (and event id); different rows get a
-      // different key instead of colliding into an already-processed batch
+      // content-derived idempotency key — retries reuse the batch, different rows never collide
       const clientBatchId = batchKeyFor(queued);
 
       try {

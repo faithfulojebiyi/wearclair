@@ -38,8 +38,7 @@ export class DevicesController {
     return this.queryBus.execute(new ListDevicesQuery());
   }
 
-  // subscription token for the caller's realtime channel — lets the app refresh
-  // derived views exactly when background derivation lands, instead of polling
+  // subscription token for the caller's realtime channel
   @ZodResponse({ type: RealtimeTokenDto })
   @Get('realtime-token')
   async getRealtimeToken() {

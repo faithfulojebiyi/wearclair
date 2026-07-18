@@ -153,11 +153,10 @@ export const classifyCycleDays = (stats: DailyStat[]): PerDayInsight[] => {
   };
 
   return days.flatMap((day, index) => {
-    // withhold partial sensor days (ordinary BLE dropout): padding a missing
-    // vital with zero would mint a medically nonsensical record (resting HR 0)
-    // that still looks valid downstream. the day keeps participating in the
-    // analysis above (temperature latch, onsets, baselines, day indexing) —
-    // only its own insight is suppressed.
+    /**
+     * withhold partial sensor days — zero-filled vitals would look valid
+     * downstream. the day still feeds the analysis above.
+     */
     if (
       day.temp === undefined ||
       day.hr === undefined ||

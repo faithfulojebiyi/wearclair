@@ -1,11 +1,10 @@
 import { channel } from 'inngest/realtime';
 import { z } from 'zod';
 
-// per-user realtime push channel (inngest realtime). The worker publishes
-// lifecycle completions here and clients subscribe via an api-minted token, so
-// server-derived views refresh the moment background derivation lands instead of
-// racing it with an immediate refetch. Cross-app boundary — schema lives with the
-// other queue contracts.
+/**
+ * per-user realtime channel: worker publishes lifecycle completions, clients
+ * subscribe via an api-minted token.
+ */
 export const SyncBatchProcessedSchema = z
   .object({
     batchId: z.string(),

@@ -4,8 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { connectBand, disconnectBand } from './band';
 import { clearAllLocalData, getQueued, store } from './local-store';
 
-// fast emit interval so the regression tests observe real timer behavior without
-// waiting the production 3s
+// fast emit interval so tests observe real timer behavior
 const TEST_EMIT_MS = 10;
 
 describe('band stream vs account cleanup', () => {
@@ -36,8 +35,7 @@ describe('band stream vs account cleanup', () => {
     await Bun.sleep(TEST_EMIT_MS * 3);
     expect(getQueued().length).toBeGreaterThan(0);
 
-    // the performSignOut order: stop the stream FIRST, then wipe — a surviving
-    // interval would repopulate the cleared queue with the old user's samples
+    // the performSignOut order: stop the stream FIRST, then wipe
     disconnectBand();
     clearAllLocalData();
 

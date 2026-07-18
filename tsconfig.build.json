@@ -1,5 +1,9 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // no .d.ts consumers; declaration checking also trips TS2742 on better-auth
+    "declaration": false
+  },
   "exclude": [
     "node_modules",
     "test",

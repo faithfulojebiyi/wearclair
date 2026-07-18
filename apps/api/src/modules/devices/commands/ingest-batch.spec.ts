@@ -179,8 +179,7 @@ describe('IngestBatchCommandHandler', () => {
     expect(statuses).toContain('RAW_WRITTEN');
     expect(statuses).not.toContain('PUBLISHED');
 
-    // the failed attempt is counted and the next one scheduled with backoff,
-    // so the recovery cron finds the batch as soon as it is due
+    // the failed attempt is counted and the next one scheduled with backoff
     const attemptBumps = deps.updateMany.mock.calls.filter(
       // @ts-expect-error — mock call args are loosely typed
       (call) => call[0]?.data?.publishAttempts !== undefined,
@@ -194,9 +193,7 @@ describe('IngestBatchCommandHandler', () => {
   });
 
   it('stamps the durable window count as sampleCount on a replay that inserts nothing', async () => {
-    // retry of a batch stranded RECEIVED by a crash after the tsdb commit: the
-    // dedupe index swallows every sample (inserted 0), but the original rows are
-    // already durable — sampleCount must reflect them, not this request's insert
+    // crash-retry: dedupe inserts 0 but the original rows are already durable
     deps.insertBatch.mockImplementation(async () => ({ inserted: 0 }));
     deps.countWindow.mockImplementation(async () => 42);
     const handler = makeHandler(deps);
@@ -239,9 +236,7 @@ describe('IngestBatchCommandHandler', () => {
   });
 
   it('rejects a clientBatchId reused with different samples before any raw write', async () => {
-    // the stored row carries a different content fingerprint — this request is
-    // NOT a retry, and accepting it would insert raw data an already-published
-    // batch never derives
+    // stored hash differs — this is not a retry
     deps.upsert.mockImplementation(async () => ({
       id: 'b1',
       contentHash: 'a-different-content-hash',

@@ -122,12 +122,11 @@ export const clearAllLocalData = (): void => {
   });
 };
 
-// single-owner guard for the (persisted) store: the store is stamped with the
-// account it belongs to, and a different account claiming it destroys the previous
-// one's health data — including anything a dead session's cleanup never wiped —
-// before it can be shown or uploaded. autoSave propagates the wipe to disk. Claim
-// only after the persisted snapshot has loaded (initPersistence), or the previous
-// owner's snapshot would overwrite the claim.
+/**
+ * single-owner store: a different account claiming it wipes the previous owner's
+ * data (autoSave propagates to disk). claim only after the persisted snapshot
+ * has loaded, or it would overwrite the claim.
+ */
 export const claimStore = (userId: string): void => {
   const owner = store.getValue('ownerUserId');
 
@@ -138,11 +137,11 @@ export const claimStore = (userId: string): void => {
   store.setValue('ownerUserId', userId);
 };
 
-// best-effort persistence: browser storage on web, expo-sqlite on native — resolved
-// via the platform-split local-persister(.web).ts twins so the wrong platform's
-// driver never enters the bundle (Metro statically bundles even dynamic imports).
-// A failure here must never break streaming. Memoized promise so callers (the
-// account-isolation guard) can await "persisted snapshot is loaded".
+/**
+ * best-effort persistence: browser storage on web, expo-sqlite on native, via the
+ * platform-split local-persister(.web).ts twins. a failure must never break
+ * streaming. memoized so callers can await "snapshot loaded".
+ */
 let persistencePromise: Promise<void> | null = null;
 
 export const initPersistence = (): Promise<void> => {
@@ -155,8 +154,7 @@ export const initPersistence = (): Promise<void> => {
       pruneQueue();
       await persister.startAutoSave();
     } catch {
-      // in-memory only — streaming + sync still work, data just won't survive
-      // restart. reset so a later call may retry.
+      // in-memory only; reset so a later call may retry
       persistencePromise = null;
     }
   })();

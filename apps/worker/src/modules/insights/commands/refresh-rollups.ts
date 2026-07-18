@@ -2,10 +2,10 @@ import { Command, CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 
 import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 
-// materialize the tsdb rollups before any aggregate read: an offline/late sync
-// lands below the cagg watermark, where real-time aggregates serve the stale
-// materialization — without this, daily stats can miss the very batch being
-// processed.
+/**
+ * refresh tsdb rollups before aggregate reads — late syncs land below the cagg
+ * watermark and are invisible until materialized.
+ */
 export class RefreshRollupsCommand extends Command<void> {
   constructor() {
     super();

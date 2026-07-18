@@ -31,11 +31,19 @@ export class CreateCycleLogCommandHandler implements ICommandHandler<CreateCycle
       ? startOfDay(new Date(command.dto.date))
       : startOfDay(new Date());
 
-    const log = await this.appPrismaService.cycleLog.create({
-      data: {
+    // upsert: one row per (user, day, category) — a repeated quick action replaces
+    const log = await this.appPrismaService.cycleLog.upsert({
+      where: {
+        userId_date_type: { userId, date, type: command.dto.type },
+      },
+      create: {
         userId,
         date,
         type: command.dto.type,
+        value: command.dto.value,
+        note: command.dto.note ?? null,
+      },
+      update: {
         value: command.dto.value,
         note: command.dto.note ?? null,
       },

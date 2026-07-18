@@ -101,11 +101,10 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
       };
     }
 
-    // fallback: no period logs yet — use the worker-derived latest insight
-    // (28-day), PROJECTED FORWARD TO TODAY like the calendar does. The newest
-    // insight can be days old (offline gap); anchoring the math on its date lets
-    // "next period" land in the past while inDays stays positive, and freezes
-    // the displayed phase at the stale one.
+    /**
+     * fallback: no period logs — project the latest insight forward to TODAY;
+     * a stale anchor lets "next period" land in the past.
+     */
     const insight = await this.appPrismaService.dailyInsight.findFirst({
       where: { userId },
       orderBy: { date: 'desc' },
@@ -125,9 +124,7 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
         DEFAULT_CYCLE_LENGTH) +
       1;
 
-    // the worker-derived phase is richer than day-of-cycle mapping (it saw the
-    // temperature shift) — keep it while the insight IS today's; once projected,
-    // the stale phase no longer applies and the day-based mapping takes over
+    // keep the richer worker phase only while the insight is today's
     const phase =
       offset === 0
         ? toCyclePhase(insight.phase)

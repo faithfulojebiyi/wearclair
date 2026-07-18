@@ -38,8 +38,7 @@ const makeDeps = (
     durable?: number;
   } = {},
 ) => {
-  // the sweep issues two findMany calls: due RAW_WRITTEN batches and stranded
-  // RECEIVED strays — dispatch the fake on the queried status
+  // the sweep issues two findMany calls — dispatch the fake on the queried status
   const findMany = mock(async (args: { where?: { status?: string } }) =>
     args?.where?.status === 'RECEIVED' ? (options.received ?? []) : batches,
   );
@@ -146,8 +145,7 @@ describe('RepublishStaleBatchesCommandHandler', () => {
     const query = deps.findMany.mock.calls[0][0];
 
     expect(query?.where?.status).toBe('RAW_WRITTEN');
-    // due rows selected by persisted schedule, with a legacy null fallback —
-    // no attempt cap and no in-code backoff filtering
+    // persisted schedule + legacy null fallback; no in-code filtering
     expect(query?.where?.OR?.[0]?.nextPublishAttemptAt?.lte).toBeInstanceOf(
       Date,
     );
@@ -196,14 +194,12 @@ describe('RepublishStaleBatchesCommandHandler', () => {
 
     expect(result.republished).toBe(1);
 
-    // ledger resumed from tsdb ground truth: RAW_WRITTEN with the durable count
     // @ts-expect-error — mock call args are loosely typed
     const promote = deps.updateMany.mock.calls[0][0];
     expect(promote?.where?.status).toBe('RECEIVED');
     expect(promote?.data?.status).toBe('RAW_WRITTEN');
     expect(promote?.data?.sampleCount).toBe(42);
 
-    // published in the same sweep with the deterministic event id + real count
     // @ts-expect-error — mock call args are loosely typed
     const eventArgs = deps.sendEvent.mock.calls[0][0];
     expect(eventArgs?.id).toBe('device-batch-stranded');
@@ -222,8 +218,6 @@ describe('RepublishStaleBatchesCommandHandler', () => {
     expect(result.republished).toBe(0);
     expect(deps.sendEvent).not.toHaveBeenCalled();
 
-    // FAILED (revivable by a clientBatchId retry), still guarded on RECEIVED so
-    // a concurrent ingest completing first wins
     // @ts-expect-error — mock call args are loosely typed
     const fail = deps.updateMany.mock.calls[0][0];
     expect(fail?.where?.status).toBe('RECEIVED');

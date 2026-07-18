@@ -6,8 +6,7 @@ import { devicesControllerGetRealtimeToken } from '@/api/generated/devices/devic
 const RETRY_MIN_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
 
-// a realtime data message for the topic the token subscribes to (the inngest
-// realtime wire format also carries lifecycle frames we don't care about)
+// data frame for our topic (the wire also carries lifecycle frames)
 const isBatchProcessedMessage = (value: unknown): boolean =>
   typeof value === 'object' &&
   value !== null &&
@@ -16,12 +15,12 @@ const isBatchProcessedMessage = (value: unknown): boolean =>
   'topic' in value &&
   value.topic === 'batches';
 
-// live "derivation finished" signal: the ingest endpoint returns BEFORE the worker
-// derives insights, so refetching on sync success races the background pipeline.
-// The worker publishes to the user's inngest realtime channel once a batch is
-// PROCESSED; this hook subscribes (native WebSocket — the SDK's subscribe() needs
-// ReadableStream, which Hermes lacks) and invalidates the derived views exactly
-// then. Reconnects with backoff while mounted; a fresh token is minted per attempt.
+/**
+ * "derivation finished" push: subscribe to the user's inngest realtime channel
+ * (native WebSocket — the SDK's subscribe() needs ReadableStream, which Hermes
+ * lacks) and invalidate derived views when a batch is PROCESSED. reconnects
+ * with backoff; a fresh token per attempt.
+ */
 export const useSyncUpdates = (enabled: boolean): void => {
   const queryClient = useQueryClient();
 

@@ -43,8 +43,7 @@ describe('GetPredictionsQueryHandler insight fallback', () => {
     // the stale luteal phase no longer applies — day 2 is menstrual
     expect(result.phase).toBe(CyclePhase.MENSTRUAL);
 
-    // every prediction is anchored on TODAY: never in the past, and inDays
-    // agrees with the date arithmetic
+    // anchored on today: never in the past, inDays agrees with the dates
     for (const prediction of [result.nextPeriod, result.ovulation]) {
       expect(prediction.date.getTime()).toBeGreaterThanOrEqual(today.getTime());
       expect(prediction.inDays).toBe(

@@ -132,10 +132,8 @@ try {
     `raw samples: ${samples.length} generated, ${inserted} inserted (rest deduped)`,
   );
 
-  // 4. materialize the rollups now so charts have history immediately instead of
-  //    waiting for the refresh policies. stops at the current bucket start (never
-  //    NULL/now): materializing the incomplete bucket would put the cagg watermark
-  //    in the future, hiding later live-sync samples from the real-time union.
+  // 4. materialize the rollups now so charts have history immediately — stops at
+  //    the current bucket start so the watermark never hides later live syncs
   await store.refreshRollups();
 
   // 5. derive insights directly (same pure classifier the worker uses — no queue

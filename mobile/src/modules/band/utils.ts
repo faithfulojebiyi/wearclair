@@ -1,9 +1,9 @@
 import { QueuedSample } from './local-store';
 
-// sync idempotency key derived from the batch CONTENT, not just its shape:
-// first/last ts + count alone collide when a middle row differs (e.g. pruning
-// between retries), and the server rejects a reused key whose stored content
-// hash no longer matches (409) — the key must change whenever the rows do.
+/**
+ * content-derived sync key: shape-only keys (first/last ts + count) collide when
+ * a middle row differs, and the server 409s a reused key with changed content.
+ */
 export const batchKeyFor = (rows: QueuedSample[]): string => {
   const input = rows
     .map((row) => `${row.ts}|${row.metric}|${row.value}`)

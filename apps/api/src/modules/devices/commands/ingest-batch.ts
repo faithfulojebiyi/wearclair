@@ -20,9 +20,7 @@ import { nextPublishAttemptAt } from '../publish-backoff';
 import { EventPublisherService } from '../../event-publisher/event-publisher.service';
 import { IngestBatchDto, SyncResultDto } from '../dto/devices.dto';
 
-// order-independent content fingerprint of a request's samples — the server-side
-// truth the idempotency key is checked against, so a reused clientBatchId can
-// never smuggle different content into an already-published batch
+// order-independent fingerprint — guards clientBatchId reuse with different content
 const hashSamples = (
   samples: { ts: Date; metric: string; value: number }[],
 ): string =>
@@ -81,10 +79,10 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
     const windowStart = new Date(Math.min(...times));
     const windowEnd = new Date(Math.max(...times));
 
-    // batch row FIRST — the ledger exists before any side effect, so a crash at
-    // any later point leaves a row the recovery cron (or a client retry on the
-    // same clientBatchId) can pick up instead of orphaned raw data. Rejects a
-    // clientBatchId reused with different content BEFORE the raw write.
+    /**
+     * ledger row first — a later crash leaves something the recovery cron can
+     * pick up. rejects a reused key with different content before the raw write.
+     */
     const batch = await this.findOrCreateBatch({
       deviceId: device.id,
       userId,
@@ -112,10 +110,7 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       throw error;
     }
 
-    // sampleCount = durable rows over the persisted window, not this request's
-    // insert count: a retry after a crash-between-tsdb-commit-and-ledger-update
-    // dedupes to 0 inserted while the original samples are already durable —
-    // stamping `inserted` would record a 0-sample batch.
+    // durable window count, not this request's inserts — a crash-retry dedupes to 0
     const durable = await this.biomarkerStore.countWindow({
       userId: batch.userId,
       deviceId: batch.deviceId,
@@ -133,8 +128,7 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       data: {
         status: SYNC_BATCH_STATUS.RAW_WRITTEN,
         rawWrittenAt: new Date(),
-        // schedule the recovery sweep up front — if the publish below fails,
-        // the batch is already queryable as due once the base window elapses
+        // pre-scheduled so a failed publish below is already sweepable
         nextPublishAttemptAt: nextPublishAttemptAt(0),
         sampleCount: durable,
       },
@@ -166,11 +160,11 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
     };
   }
 
-  // reuse the row for a retried clientBatchId; otherwise mint one. sampleCount
-  // starts at 0 and is set from the durable window count on the raw write. A
-  // reused row must carry the SAME content: an already-PUBLISHED/PROCESSED batch
-  // never re-publishes, so silently accepting different samples under its key
-  // would insert raw data no derivation ever picks up.
+  /**
+   * reuse the row for a retried clientBatchId; a reused row must carry the SAME
+   * content — a completed batch never re-publishes, so different samples under
+   * its key would become raw data no derivation ever picks up.
+   */
   private async findOrCreateBatch(data: {
     deviceId: string;
     userId: string;
@@ -215,8 +209,7 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       );
     }
 
-    // legacy rows predate the hash — stamp on first re-encounter (guarded so a
-    // concurrent request can't overwrite an existing stamp)
+    // legacy rows predate the hash — stamp once, guarded
     if (!batch.contentHash) {
       await this.appPrismaService.syncBatch.updateMany({
         where: { id: batch.id, contentHash: null },

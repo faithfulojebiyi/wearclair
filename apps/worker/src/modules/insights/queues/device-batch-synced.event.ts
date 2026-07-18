@@ -24,9 +24,7 @@ export const deviceBatchSyncedEvent = ({
       triggers: [EVENTS.DEVICE_BATCH_SYNCED],
     },
     async ({ event, step }) => {
-      // an offline/late batch lands below the cagg watermark and is invisible to
-      // the real-time aggregate — refresh first so the daily read actually sees
-      // this batch before it is marked PROCESSED
+      // late batches land below the cagg watermark — refresh before reading
       await step.run('refresh-rollups', async () =>
         commandBus.execute(new RefreshRollupsCommand()),
       );
@@ -45,9 +43,7 @@ export const deviceBatchSyncedEvent = ({
         commandBus.execute(new MarkBatchProcessedCommand(event.data.batchId)),
       );
 
-      // push "derivation finished" to the user's realtime channel — clients hold
-      // their derived-view refetch until this lands (the ingest response returns
-      // BEFORE this function runs, so refetching on sync success races us)
+      // push "derivation finished" — the ingest response returned before this ran
       await step.realtime.publish(
         'notify-batch-processed',
         userChannel({ userId: event.data.userId }).batches,

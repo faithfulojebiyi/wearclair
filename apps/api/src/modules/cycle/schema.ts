@@ -146,9 +146,11 @@ export const CycleDaySummarySchema = z
   })
   .meta({ id: 'CycleDaySummary' });
 
-// Edit-period SAVE: replace the logged period days within [from, to] with `dates`.
-// same 400d cap as the calendar — the command returns the recalculated calendar
-// for the window, which derives one day object per requested day.
+/**
+ * Edit-period SAVE: replace the logged period days within [from, to] with `dates`.
+ * same 400d cap as the calendar. every entry must fall inside the window — an
+ * out-of-window date would be written invisibly and never be removable here.
+ */
 export const SetPeriodSchema = z
   .object({
     from: z.iso.datetime(),
@@ -156,4 +158,21 @@ export const SetPeriodSchema = z
     dates: z.array(z.iso.datetime()).max(400),
   })
   .superRefine(dateRangeWithin(400))
+  .superRefine((value, ctx) => {
+    // day-level bounds; iso day keys compare lexicographically
+    const fromKey = value.from.slice(0, 10);
+    const toKey = value.to.slice(0, 10);
+
+    value.dates.forEach((date, index) => {
+      const key = date.slice(0, 10);
+
+      if (key < fromKey || key > toKey) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['dates', index],
+          message: 'date must fall within [from, to]',
+        });
+      }
+    });
+  })
   .meta({ id: 'SetPeriod' });

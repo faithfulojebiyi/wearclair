@@ -174,9 +174,7 @@ export class BiomarkerStore {
       .sort((a, b) => a.bucket.getTime() - b.bucket.getTime());
   }
 
-  // durable rows for a batch window — the ground truth the sync ledger reconciles
-  // against: a crash between the tsdb commit and the ledger update leaves data
-  // here that the app db doesn't know about yet.
+  // durable rows for a batch window — ground truth the sync ledger reconciles against
   async countWindow(args: {
     userId: string;
     deviceId: string;
@@ -229,14 +227,11 @@ export class BiomarkerStore {
     }));
   }
 
-  // materialize both rollups up to the start of their current (incomplete) bucket.
-  // real-time aggregates only union raw rows at/after the watermark, so samples
-  // landing in already-materialized buckets (offline/late syncs) are invisible to
-  // aggregate reads until a refresh covers them. the end bound stops at the current
-  // bucket start — never in the future — so the live head keeps being served from
-  // raw via the real-time union. NULL start closes never-materialized gaps, and the
-  // invalidation log makes unchanged regions a no-op, so this is cheap per sync.
-  // CALL cannot run inside a transaction — each refresh is its own autocommit query.
+  /**
+   * materialize both rollups up to the current bucket start — never past now, or
+   * the watermark would hide new raw rows from the real-time union. CALL cannot
+   * run inside a transaction.
+   */
   async refreshRollups(): Promise<void> {
     await this.pool.query(
       `CALL refresh_continuous_aggregate('biomarker_1h', NULL, time_bucket('1 hour', now()))`,

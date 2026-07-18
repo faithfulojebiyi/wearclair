@@ -7,7 +7,7 @@ import { healthInsightSignature } from './signature';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// synthetic ascending history; only the last day drives the signature.
+// synthetic ascending history; the signature covers the last-15-day generation window.
 const history = (
   count: number,
   last: Partial<PerDayInsight>,
@@ -56,9 +56,22 @@ describe('healthInsightSignature', () => {
     expect(a).toBe(b);
   });
 
-  it('depends only on the latest day, not earlier days', () => {
+  it('changes when a baseline day inside the generation window changes', () => {
+    // card generation derives baselines from the 14 prior days — a late
+    // correction to one of them must invalidate the gate
     const days = history(15, {});
     const mutated = history(15, {});
+    mutated[3] = { ...mutated[3], readiness: 10 };
+
+    expect(healthInsightSignature(days)).not.toBe(
+      healthInsightSignature(mutated),
+    );
+  });
+
+  it('ignores days older than the generation window', () => {
+    const days = history(20, {});
+    const mutated = history(20, {});
+    // index 0 of 20 is outside the last-15 window generation reads
     mutated[0] = { ...mutated[0], readiness: 10 };
 
     expect(healthInsightSignature(days)).toBe(healthInsightSignature(mutated));

@@ -10,17 +10,8 @@ import { nextPublishAttemptAt, STALE_AFTER_MS } from '../publish-backoff';
 import { EventPublisherService } from '../../event-publisher/event-publisher.service';
 
 /**
- * Recovery sweep for batches the ingest lifecycle lost track of:
- * - RAW_WRITTEN whose derivation event never reached inngest — republish. Safe
- *   (same deterministic event id + idempotent worker); retries never stop, each
- *   failed attempt persists the next due time (exponential backoff, see
- *   publish-backoff.ts), so the sweep queries due-ness directly and not-yet-due
- *   rows can't crowd due ones out of the page.
- * - RECEIVED older than the staleness window — a crash in the gap between the
- *   tsdb commit and the ledger update. Resolved against tsdb ground truth:
- *   durable rows in the window mean the raw write committed (promote to
- *   RAW_WRITTEN and publish); none mean it never did (FAILED, which a client
- *   retry on the same clientBatchId revives).
+ * recovery sweep: republish due RAW_WRITTEN batches (persisted backoff, no
+ * starvation) and resolve RECEIVED strays against the tsdb (promote or FAILED).
  */
 const ALERT_AFTER_ATTEMPTS = 5;
 const SWEEP_LIMIT = 100;
@@ -51,10 +42,7 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
 
     const now = new Date();
 
-    // due-ness is persisted (nextPublishAttemptAt), so the query returns exactly
-    // the due rows — a backlog of not-yet-due high-attempt rows can't starve
-    // newer due ones. null schedule = rows from before the column existed; they
-    // fall back to the base staleness window.
+    // null schedule = legacy rows, due by base staleness
     const stale = await primary.syncBatch.findMany({
       where: {
         status: SYNC_BATCH_STATUS.RAW_WRITTEN,
@@ -70,9 +58,7 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
       take: SWEEP_LIMIT,
     });
 
-    // long-failing batches keep retrying (backoff), but past the alert threshold
-    // they're surfaced loudly every sweep — even between their due times — so a
-    // persistent publish problem is visible in ops, not just eventually self-healed.
+    // long-failing batches are alerted every sweep, not just silently retried
     const struggling = await primary.syncBatch.count({
       where: {
         status: SYNC_BATCH_STATUS.RAW_WRITTEN,
@@ -87,10 +73,10 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
       );
     }
 
-    // crash recovery for RECEIVED strays: reconcile the ledger against what
-    // actually landed in the tsdb. status-guarded updates keep this safe against
-    // a concurrent slow ingest — whoever transitions the row first wins, and the
-    // ingest path treats FAILED as retryable.
+    /**
+     * RECEIVED strays: reconcile the ledger against what actually landed in the
+     * tsdb. status-guarded updates keep a racing slow ingest safe.
+     */
     const stranded = await primary.syncBatch.findMany({
       where: {
         status: SYNC_BATCH_STATUS.RECEIVED,
@@ -111,8 +97,7 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
       });
 
       if (durable > 0) {
-        // the raw write committed before the crash — resume the lifecycle where
-        // it was cut off and publish in this same sweep (already overdue)
+        // raw write committed before the crash — resume and publish this sweep
         const result = await this.appPrismaService.syncBatch.updateMany({
           where: { id: batch.id, status: SYNC_BATCH_STATUS.RECEIVED },
           data: {
@@ -127,8 +112,7 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
           promoted.push({ ...batch, sampleCount: durable });
         }
       } else {
-        // nothing landed — the raw write never committed. FAILED is the honest
-        // state and stays revivable by a clientBatchId retry.
+        // nothing landed — FAILED, revivable by a clientBatchId retry
         await this.appPrismaService.syncBatch.updateMany({
           where: { id: batch.id, status: SYNC_BATCH_STATUS.RECEIVED },
           data: { status: SYNC_BATCH_STATUS.FAILED },

@@ -126,9 +126,7 @@ model SyncBatch {
   // client-supplied idempotency key — retries of the same client batch reuse the
   // row (and the deterministic event id) instead of minting a duplicate
   clientBatchId   String?     @map("client_batch_id")
-  // server-computed sha256 over the request's samples: a clientBatchId reuse with
-  // DIFFERENT content is rejected (409) instead of silently inserting raw data an
-  // already-published batch will never derive. null only on pre-hash legacy rows.
+  // sha256 of the samples — clientBatchId reuse with different content is 409'd
   contentHash     String?     @map("content_hash")
   windowStart DateTime        @map("window_start")
   windowEnd   DateTime        @map("window_end")
@@ -143,8 +141,7 @@ model SyncBatch {
   publishedAt     DateTime?   @map("published_at")
   processedAt     DateTime?   @map("processed_at")
   publishAttempts Int         @default(0) @map("publish_attempts")
-  // when the recovery cron may next (re)publish this batch — persisted so the
-  // sweep queries due-ness directly instead of paging + filtering (no starvation)
+  // next recovery-cron attempt — due-ness is queried, not filtered (no starvation)
   nextPublishAttemptAt DateTime? @map("next_publish_attempt_at")
   createdAt   DateTime        @default(now()) @map("created_at")
 

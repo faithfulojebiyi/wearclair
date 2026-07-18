@@ -19,7 +19,8 @@ module.exports = function (options) {
         configFile,
         memoryLimit: 4096,
       },
-      async: true,
+      // async:false — the build must FAIL on type errors, not report them after exit 0
+      async: false,
       formatter: 'basic',
     }),
   );

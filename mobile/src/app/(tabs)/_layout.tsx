@@ -56,16 +56,13 @@ export default function TabsLayout() {
   // the device to sync the local vitals queue against (first paired band).
   const devices = useDevices(Boolean(session));
 
-  // account isolation BEFORE the sync engine: claim/wipe the local vitals store for
-  // the signed-in user, and stop the band stream when the session dies without an
-  // explicit sign-out (expiry/revocation).
+  // account isolation BEFORE the sync engine
   useAccountIsolation(session?.user?.id, resolved && !isPending);
 
   // background vitals sync engine — drains the local queue to the backend app-wide.
   useVitalsSync(devices.data?.devices[0]?.id, session?.user?.id);
 
-  // realtime "derivation finished" push — refreshes insights/cycle/biomarkers the
-  // moment the worker marks a synced batch PROCESSED.
+  // realtime "derivation finished" push
   useSyncUpdates(Boolean(session) && resolved);
 
   // web: persist the session token so the Orval axios client can send it as a Bearer

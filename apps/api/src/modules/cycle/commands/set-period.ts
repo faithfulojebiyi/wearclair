@@ -40,8 +40,13 @@ export class SetPeriodCommandHandler implements ICommandHandler<SetPeriodCommand
 
     const from = startOfDay(new Date(command.dto.from));
     const to = startOfDay(new Date(command.dto.to));
+    // defense in depth behind the schema: only window-bounded days are written
+    const fromKey = dayKey(from);
+    const toKey = dayKey(to);
     const keep = new Set(
-      command.dto.dates.map((d) => dayKey(startOfDay(new Date(d)))),
+      command.dto.dates
+        .map((d) => dayKey(startOfDay(new Date(d))))
+        .filter((key) => key >= fromKey && key <= toKey),
     );
 
     await this.appPrismaService.$transaction(async (tx) => {

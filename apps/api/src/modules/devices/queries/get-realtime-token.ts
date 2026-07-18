@@ -21,9 +21,7 @@ export class GetRealtimeTokenQuery extends Query<RealtimeTokenDto> {
   }
 }
 
-// mints a subscription token scoped to the caller's own realtime channel — the
-// client uses it to hear "derivation finished" pushes from the worker instead of
-// racing the background pipeline with an immediate refetch.
+// subscription token scoped to the caller's own realtime channel
 @QueryHandler(GetRealtimeTokenQuery)
 export class GetRealtimeTokenQueryHandler implements IQueryHandler<GetRealtimeTokenQuery> {
   constructor(private readonly alsService: AlsService) {}
@@ -48,7 +46,7 @@ export class GetRealtimeTokenQueryHandler implements IQueryHandler<GetRealtimeTo
 
     return {
       key: token.key,
-      // resolveDefaultUrl always yields a value; the fallback is for the types
+      // fallback is for the types only
       apiBaseUrl: token.apiBaseUrl ?? 'https://api.inngest.com',
       channel: resolvedChannel.name,
       topics: [...USER_CHANNEL_TOPICS],
