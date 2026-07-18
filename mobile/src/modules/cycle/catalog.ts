@@ -37,7 +37,7 @@ export const CATALOG: Category[] = [
     key: 'flow',
     label: 'Flow',
     icon: Droplet,
-    tint: '#FF6116',
+    tint: '#EE7A36',
     kind: 'multi',
     options: ['Spotting', 'Light', 'Medium', 'Heavy'],
   },

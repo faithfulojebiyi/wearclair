@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -47,7 +48,12 @@ export default function SignInScreen() {
     >
       <View style={styles.brandBlock}>
         <View style={styles.mark}>
-          <Text style={styles.markText}>C</Text>
+          {/* the brand flower — same asset the native splash screen uses */}
+          <Image
+            resizeMode="contain"
+            source={require('../../assets/images/splash-icon.png')}
+            style={styles.markImage}
+          />
         </View>
         <Text style={styles.brand}>Clair</Text>
         <Text style={styles.tagline}>Continuous hormone intelligence.</Text>
@@ -111,7 +117,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 64,
   },
-  markText: { color: c.accent, fontSize: 34, fontWeight: '800' },
+  markImage: { height: 56, width: 56 },
   brand: {
     color: c.ink,
     fontFamily: serifBold,

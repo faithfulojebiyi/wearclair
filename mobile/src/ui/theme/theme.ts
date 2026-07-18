@@ -1,28 +1,29 @@
 import { CyclePhase } from '@/api/generated/wearclairAPI.schemas';
 
 // the Clair palette — a Radix composition (radix-ui.com/colors, understanding-the-
-// scale): the red/orange scale carries brand + solids, the gray scale carries
-// neutral text, the translucent panel scale below carries insets. Each token is
-// annotated with its Radix step so usage follows the scale's semantics:
+// scale): a custom orange scale generated from the brand color #EE7A36 (= step 9)
+// carries brand + solids, the gray scale carries neutral text, the translucent
+// panel scale below carries insets. Each token is annotated with its Radix step
+// so usage follows the scale's semantics:
 //   1 app bg · 2 subtle bg · 3-5 component bg · 9 solid · 10 solid hover ·
 //   11 low-contrast text · 12 high-contrast text.
 export const c = {
-  bg: '#FEFCFB', // red-1  (app background)
+  bg: '#FEFCFB', // orange-1  (app background)
   card: '#FFFFFF',
-  cardWarm: '#FFF5F0', // red-2  (subtle background)
-  border: '#FFE9DE', // red-3  (component background — tint, not stroke)
-  borderStrong: '#FFD7C4', // red-4
+  cardWarm: '#FFF6F2', // orange-2  (subtle background)
+  border: '#FFECE1', // orange-3  (component background — tint, not stroke)
+  borderStrong: '#FFD9C2', // orange-4
 
-  ink: '#5A2B1A', // red-12  (high-contrast text)
+  ink: '#54301D', // orange-12  (high-contrast text)
   inkSoft: '#62636C', // gray-11  (low-contrast text)
   muted: '#8B8D98', // gray-9
   faint: '#B9BBC6', // gray-8
 
-  accent: '#FF6116', // red-9  (solid background)
-  accentDeep: '#F35200', // red-10  (solid hover/pressed)
-  accentText: '#D94100', // red-11  (accent-colored text)
-  accentSoft: '#FFE9DE', // red-3  (accent component background)
-  onAccent: '#FFFFFF', // red-contrast
+  accent: '#EE7A36', // orange-9  (solid background — the Clair brand orange)
+  accentDeep: '#E26D24', // orange-10  (solid hover/pressed)
+  accentText: '#C55700', // orange-11  (accent-colored text)
+  accentSoft: '#FFECE1', // orange-3  (accent component background)
+  onAccent: '#FFFFFF', // orange-contrast
 
   good: '#46A758',
   goodSoft: '#E9F6EB',
