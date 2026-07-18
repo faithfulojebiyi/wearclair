@@ -15,7 +15,6 @@ import { CacheModule } from '@system/cache/cache.module';
 import { CqrsModule } from '@system/cqrs/cqrs.module';
 import { DatabaseModule } from '@system/database/database.module';
 import { TimeseriesModule } from '@system/timeseries/timeseries.module';
-import { PubSubModule } from '@system/pubsub/pubsub.module';
 import { AllExceptionsFilter } from '@system/interceptors/error.interceptor';
 import { buildLoggerParams } from '@system/logger/logger.config';
 
@@ -23,6 +22,7 @@ import { ApiController } from './api.controller';
 import { envSchema } from './api.env.schema';
 import { ApiService } from './api.service';
 import { BiomarkersModule } from './modules/biomarkers/biomarkers.module';
+import { CycleModule } from './modules/cycle/cycle.module';
 import { DevicesModule } from './modules/devices/devices.module';
 import { EventPublisherModule } from './modules/event-publisher/event-publisher.module';
 import { HealthModule } from './modules/health/health.module';
@@ -42,7 +42,6 @@ import { InsightsModule } from './modules/insights/insights.module';
     CqrsModule,
     DatabaseModule,
     TimeseriesModule,
-    PubSubModule,
 
     // providers
     // Mastra (our Fastify fork of @mastra/nestjs): serves agent routes under
@@ -70,6 +69,7 @@ import { InsightsModule } from './modules/insights/insights.module';
     DevicesModule,
     BiomarkersModule,
     InsightsModule,
+    CycleModule,
   ],
   controllers: [ApiController],
   providers: [

@@ -12,7 +12,6 @@ import { CacheModule } from '@system/cache/cache.module';
 import { CqrsModule } from '@system/cqrs/cqrs.module';
 import { DatabaseModule } from '@system/database/database.module';
 import { TimeseriesModule } from '@system/timeseries/timeseries.module';
-import { PubSubModule } from '@system/pubsub/pubsub.module';
 import { AllExceptionsFilter } from '@system/interceptors/error.interceptor';
 import { buildLoggerParams } from '@system/logger/logger.config';
 
@@ -33,7 +32,6 @@ import { WorkerService } from './worker.service';
     CqrsModule,
     DatabaseModule,
     TimeseriesModule,
-    PubSubModule,
 
     // providers
     ResendModule,

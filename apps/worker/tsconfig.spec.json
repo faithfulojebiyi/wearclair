@@ -1,0 +1,8 @@
+{
+  // owns *.spec.ts for the editor's TS server — tsconfig.app.json (used by the build)
+  // excludes specs, which orphans them and drops @types/bun (the 'bun:test' module).
+  // inert for `nest build worker`, which uses tsconfig.app.json.
+  "extends": "./tsconfig.app.json",
+  "include": ["src/**/*.spec.ts"],
+  "exclude": []
+}

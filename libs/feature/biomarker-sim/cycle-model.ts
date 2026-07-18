@@ -14,11 +14,40 @@ export const CYCLE_LENGTH_DAYS = 28;
 const CYCLE_EPOCH_UTC_MS = Date.UTC(2024, 0, 1);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// demo cycle anchoring: day 1 (period start) is pinned to the most recent 18th at or
+// before the reference date, so the cycle always begins mid-month. Both the seed and
+// the live simulate-sync pass this anchor, so the whole history + new syncs stay one
+// continuous 28-day cycle. (Without an anchor, cycleDayFor falls back to the per-user
+// hash offset.)
+export const CYCLE_ANCHOR_DAY_OF_MONTH = 18;
+
+export const cycleAnchorFor = (now: Date): number => {
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+
+  return now.getUTCDate() >= CYCLE_ANCHOR_DAY_OF_MONTH
+    ? Date.UTC(y, m, CYCLE_ANCHOR_DAY_OF_MONTH)
+    : Date.UTC(y, m - 1, CYCLE_ANCHOR_DAY_OF_MONTH);
+};
+
 export type SimCyclePhase = 'menstrual' | 'follicular' | 'ovulatory' | 'luteal';
 
-// each user's cycle is anchored at a stable per-user offset, so "today" lands on a
-// stable cycle day across runs.
-export const cycleDayFor = (userId: string, date: Date): number => {
+// cycle day (1-based) for a date. With `anchorMs`, day 1 is the anchor date and the
+// cycle counts continuously from there; otherwise it falls back to a stable per-user
+// offset so "today" lands on a consistent cycle day across runs.
+export const cycleDayFor = (
+  userId: string,
+  date: Date,
+  anchorMs?: number,
+): number => {
+  if (anchorMs !== undefined) {
+    const days = Math.floor((date.getTime() - anchorMs) / DAY_MS);
+
+    return (
+      (((days % CYCLE_LENGTH_DAYS) + CYCLE_LENGTH_DAYS) % CYCLE_LENGTH_DAYS) + 1
+    );
+  }
+
   const offsetDays = hashSeed(`${userId}:cycle-anchor`) % CYCLE_LENGTH_DAYS;
   const daysSinceEpoch = Math.floor(
     (date.getTime() - CYCLE_EPOCH_UTC_MS) / DAY_MS,

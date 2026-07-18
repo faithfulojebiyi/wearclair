@@ -6,11 +6,11 @@ import { LoadDailyStatsQuery } from '@worker/modules/insights/queries/load-daily
 
 import { EVENTS, INNGEST_OPTIONS } from '@system/queues/events.config';
 
-// queue consumer for `device/batch.synced` — derive daily insights from the tsdb
-// rollups. Three steps so each stage is independently retryable/memoized: a
-// transient tsdb read failure never recomputes the app-db writes. The event id
-// (device-batch-<id>) dedupes redeliveries, and the upsert-based derivation is
-// idempotent on top of that.
+// queue consumer for `device/batch.synced` — derive the daily insight NUMBERS from
+// the tsdb rollups. Steps are independently retryable/memoized: a transient tsdb read
+// failure never recomputes the app-db writes. The event id (device-batch-<id>) dedupes
+// redeliveries, and the upsert-based derivation is idempotent on top of that. The AI
+// narrative feed is a SEPARATE, debounced function (refresh-health-insights.event.ts).
 export const deviceBatchSyncedEvent = ({
   commandBus,
   queryBus,

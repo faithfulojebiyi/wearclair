@@ -1,23 +1,59 @@
+import {
+  Fraunces_600SemiBold,
+  Fraunces_700Bold,
+  useFonts,
+} from '@expo-google-fonts/fraunces';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { ActivityIndicator, View } from 'react-native';
+import { Provider as TinyBaseProvider } from 'tinybase/ui-react';
 
-import { c } from '../lib/theme';
+import { initPersistence, store } from '@/modules/band/local-store';
+import { c } from '@/ui/theme/theme';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
 export default function RootLayout() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: c.bg },
+  const [fontsLoaded] = useFonts({
+    Fraunces_600SemiBold,
+    Fraunces_700Bold,
+  });
+
+  // load the persisted local vitals + start auto-save (best-effort; no-op on failure)
+  useEffect(() => {
+    void initPersistence();
+  }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View
+        style={{
+          alignItems: 'center',
+          backgroundColor: c.bg,
+          flex: 1,
+          justifyContent: 'center',
         }}
-      />
-    </QueryClientProvider>
+      >
+        <ActivityIndicator color={c.accent} />
+      </View>
+    );
+  }
+
+  return (
+    <TinyBaseProvider store={store}>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: c.bg },
+          }}
+        />
+      </QueryClientProvider>
+    </TinyBaseProvider>
   );
 }

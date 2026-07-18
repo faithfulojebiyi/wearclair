@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -6,49 +7,66 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { biomarkersControllerGetLatest } from '../../api/generated/biomarkers/biomarkers';
-import {
-  insightsControllerGetRange,
-  insightsControllerGetToday,
-} from '../../api/generated/insights/insights';
-import { GaugeArc } from '../../components/gauge-arc';
-import { Card, Pill, SectionTitle } from '../../components/ui';
-import { c, metricMeta, phaseMeta, scoreColor, space } from '../../lib/theme';
+import { VitalsTiles } from '@/modules/biomarkers/components/vitals-tiles';
+import { useLiveReadings } from '@/modules/biomarkers/use-live-readings';
+import { PredictionsCard } from '@/modules/cycle/components/predictions-card';
+import { QuickActions } from '@/modules/cycle/components/quick-actions';
+import { usePredictions } from '@/modules/cycle/queries/use-predictions';
+import { HormoneChartCard } from '@/modules/insights/components/hormone-chart';
+import { HormoneGrid } from '@/modules/insights/components/hormone-grid';
+import { SCOPES, Scope } from '@/modules/insights/hormone-chart';
+import { useInsightRange } from '@/modules/insights/queries/use-insight-range';
+import { useTodayInsight } from '@/modules/insights/queries/use-today-insight';
+import { Card, InnerCard, Pill, SectionTitle, Segmented } from '@/ui/primitives/ui';
+import { c, phaseMeta, serifBold, space } from '@/ui/theme/theme';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const greeting = () => {
+  const hour = new Date().getHours();
 
-const todayLabel = new Date().toLocaleDateString(undefined, {
-  weekday: 'long',
-  month: 'long',
+  if (hour < 12) {
+    return 'Good Morning!';
+  }
+
+  return hour < 18 ? 'Good Afternoon!' : 'Good Evening!';
+};
+
+const dateLabel = new Date().toLocaleDateString(undefined, {
   day: 'numeric',
+  month: 'short',
+  year: 'numeric',
 });
 
-export default function TodayScreen() {
-  const today = useQuery({
-    queryKey: ['insights', 'today'],
-    queryFn: () => insightsControllerGetToday(),
-  });
+export default function HomeScreen() {
+  const { width } = useWindowDimensions();
+  const queryClient = useQueryClient();
 
-  const timeline = useQuery({
-    queryKey: ['insights', 'range'],
-    queryFn: () =>
-      insightsControllerGetRange({
-        from: new Date(Date.now() - 28 * DAY_MS).toISOString(),
-        to: new Date(Date.now() + DAY_MS).toISOString(),
-      }),
-  });
+  const [scope, setScope] = useState<Scope>('month');
 
-  const latest = useQuery({
-    queryKey: ['biomarkers', 'latest'],
-    queryFn: () => biomarkersControllerGetLatest(),
-  });
+  const today = useTodayInsight();
+  const range = useInsightRange();
+  const predictions = usePredictions();
+  const { connected, readings } = useLiveReadings();
 
-  const refreshing = today.isRefetching || latest.isRefetching;
+  // dedicated pull-to-refresh state — NOT query.isRefetching, which flips on every
+  // background refetch (the 8s sync invalidates insights), making the page jump.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['insights'] }),
+      queryClient.invalidateQueries({ queryKey: ['cycle', 'predictions'] }),
+      queryClient.invalidateQueries({ queryKey: ['biomarkers'] }),
+    ]);
+    setRefreshing(false);
+  };
+
   const insight = today.data;
   const phase = insight ? phaseMeta[insight.phase] : null;
+  const chartWidth = width - space.screen * 2 - 56;
 
   if (today.isLoading) {
     return (
@@ -65,11 +83,7 @@ export default function TodayScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            onRefresh={() => {
-              today.refetch();
-              timeline.refetch();
-              latest.refetch();
-            }}
+            onRefresh={onRefresh}
             refreshing={refreshing}
             tintColor={c.accent}
           />
@@ -77,93 +91,51 @@ export default function TodayScreen() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.hello}>Today</Text>
-            <Text style={styles.date}>{todayLabel}</Text>
-          </View>
-          <View style={styles.brandDot}>
-            <Text style={styles.brandDotText}>C</Text>
+            <Text style={styles.greeting}>{greeting()}</Text>
+            <Text style={styles.date}>{dateLabel}</Text>
           </View>
         </View>
 
         {insight && phase ? (
-          <Card style={styles.hero}>
-            <View style={styles.gaugeWrap}>
-              <GaugeArc
-                big={String(insight.readiness)}
-                color={scoreColor(insight.readiness)}
-                label="Readiness"
-                sub={`vs your 14-day baseline`}
-                value={insight.readiness}
+          <Card>
+            <View style={styles.phaseHead}>
+              <Pill
+                color={phase.color}
+                label={`${phase.label} phase`}
+                soft={phase.soft}
               />
+              <Text style={styles.cycleDay}>Day {insight.cycleDay}</Text>
             </View>
 
-            <View style={styles.phaseRow}>
-              <Pill color={phase.color} label={phase.label} soft={phase.soft} />
-              <Text style={styles.cycleDay}>Cycle day {insight.cycleDay}</Text>
+            <View style={styles.scopeRow}>
+              <Segmented onChange={setScope} options={SCOPES} value={scope} />
             </View>
 
-            <Text style={styles.blurb}>{phase.blurb}</Text>
+            <HormoneChartCard
+              chartWidth={chartWidth}
+              insights={range.data?.insights ?? []}
+              scope={scope}
+            />
+
+            <HormoneGrid hormones={insight.hormones} />
           </Card>
         ) : (
-          <Card style={styles.hero}>
-            <Text style={styles.empty}>
-              No insights yet — sync your device to decode your cycle.
-            </Text>
+          <Card>
+            <InnerCard>
+              <Text style={styles.empty}>
+                No insights yet — connect your band to decode your cycle.
+              </Text>
+            </InnerCard>
           </Card>
         )}
 
-        {timeline.data && timeline.data.insights.length > 0 ? (
-          <View>
-            <SectionTitle>Last 28 days</SectionTitle>
-            <View style={styles.timeline}>
-              {timeline.data.insights.map((day) => (
-                <View
-                  key={day.date}
-                  style={[
-                    styles.seg,
-                    { backgroundColor: phaseMeta[day.phase].color },
-                  ]}
-                />
-              ))}
-            </View>
-            <View style={styles.legend}>
-              {Object.values(phaseMeta).map((meta) => (
-                <View key={meta.label} style={styles.legendItem}>
-                  <View
-                    style={[styles.legendDot, { backgroundColor: meta.color }]}
-                  />
-                  <Text style={styles.legendText}>{meta.label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
+        <SectionTitle>Predictions</SectionTitle>
+        <PredictionsCard predictions={predictions.data} />
 
-        <SectionTitle>Vitals</SectionTitle>
-        <View style={styles.tiles}>
-          {(latest.data?.readings ?? []).map((reading) => {
-            const meta = metricMeta[reading.metric];
+        <SectionTitle>Quick Actions</SectionTitle>
+        <QuickActions />
 
-            return (
-              <Card key={reading.metric} style={styles.tile}>
-                <View style={styles.tileHead}>
-                  <View style={[styles.tileDot, { backgroundColor: meta.tint }]} />
-                  <Text style={styles.tileLabel}>{meta.label}</Text>
-                </View>
-                <Text style={styles.tileValue}>
-                  {reading.value.toFixed(meta.decimals)}
-                  <Text style={styles.tileUnit}> {meta.unit}</Text>
-                </Text>
-              </Card>
-            );
-          })}
-        </View>
-
-        {insight ? (
-          <Text style={styles.lineage}>
-            Derived from {insight.sourceSampleCount.toLocaleString()} raw samples
-          </Text>
-        ) : null}
+        <VitalsTiles connected={connected} readings={readings} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -179,7 +151,7 @@ const styles = StyleSheet.create({
   },
   container: {
     gap: space.gap,
-    paddingBottom: 40,
+    paddingBottom: 120,
     paddingHorizontal: space.screen,
     paddingTop: 8,
   },
@@ -187,62 +159,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
   },
-  hello: { color: c.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.5 },
-  date: { color: c.textMuted, fontSize: 14, marginTop: 2 },
-  brandDot: {
+  greeting: { color: c.ink, fontFamily: serifBold, fontSize: 30 },
+  date: { color: c.muted, fontSize: 14, marginTop: 3 },
+  phaseHead: {
     alignItems: 'center',
-    backgroundColor: c.accentSoft,
-    borderRadius: 20,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  brandDotText: { color: c.accent, fontSize: 18, fontWeight: '800' },
-  hero: { alignItems: 'center', gap: 16, paddingVertical: 24 },
-  gaugeWrap: { alignItems: 'center' },
-  phaseRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
-  cycleDay: { color: c.textDim, fontSize: 15, fontWeight: '600' },
-  blurb: {
-    color: c.textDim,
-    fontSize: 14,
-    lineHeight: 21,
-    paddingHorizontal: 8,
-    textAlign: 'center',
-  },
-  empty: { color: c.textMuted, fontSize: 15, textAlign: 'center' },
-  timeline: {
     flexDirection: 'row',
-    gap: 3,
-    height: 40,
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+    paddingTop: 2,
   },
-  seg: { borderRadius: 3, flex: 1 },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-    marginTop: 12,
-  },
-  legendItem: { alignItems: 'center', flexDirection: 'row', gap: 5 },
-  legendDot: { borderRadius: 3, height: 6, width: 6 },
-  legendText: { color: c.textMuted, fontSize: 12 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: space.gap },
-  tile: { flexBasis: '47%', flexGrow: 1, gap: 10, padding: 14 },
-  tileHead: { alignItems: 'center', flexDirection: 'row', gap: 7 },
-  tileDot: { borderRadius: 3, height: 6, width: 6 },
-  tileLabel: { color: c.textMuted, fontSize: 13 },
-  tileValue: {
-    color: c.text,
-    fontSize: 22,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  tileUnit: { color: c.textMuted, fontSize: 13, fontWeight: '500' },
-  lineage: {
-    color: c.textFaint,
-    fontSize: 12,
-    marginTop: 8,
-    textAlign: 'center',
-  },
+  cycleDay: { color: c.inkSoft, fontSize: 14, fontWeight: '700' },
+  scopeRow: { marginBottom: 12, paddingHorizontal: 2 },
+  empty: { color: c.muted, fontSize: 15, textAlign: 'center' },
 });

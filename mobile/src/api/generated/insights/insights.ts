@@ -8,6 +8,8 @@
 import type {
   DailyInsight,
   DailyInsightList,
+  HealthInsightList,
+  InsightsControllerGetHealthParams,
   InsightsControllerGetRangeParams
 } from '../wearclairAPI.schemas';
 
@@ -25,6 +27,15 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
     },
       options);
     }
+  export const insightsControllerGetHealth = (
+    params?: InsightsControllerGetHealthParams,
+ options?: SecondParameter<typeof customInstance<HealthInsightList>>,) => {
+      return customInstance<HealthInsightList>(
+      {url: `/insights/health`, method: 'GET',
+        params
+    },
+      options);
+    }
   export const insightsControllerGetRange = (
     params: InsightsControllerGetRangeParams,
  options?: SecondParameter<typeof customInstance<DailyInsightList>>,) => {
@@ -35,4 +46,5 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
       options);
     }
   export type InsightsControllerGetTodayResult = NonNullable<Awaited<ReturnType<typeof insightsControllerGetToday>>>
+export type InsightsControllerGetHealthResult = NonNullable<Awaited<ReturnType<typeof insightsControllerGetHealth>>>
 export type InsightsControllerGetRangeResult = NonNullable<Awaited<ReturnType<typeof insightsControllerGetRange>>>

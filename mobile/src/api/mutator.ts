@@ -1,9 +1,9 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
 import { Platform } from 'react-native';
 
-import { authClient } from '../lib/auth-client';
-import { API_URL } from '../lib/config';
-import { getToken } from '../lib/token';
+import { authClient } from '@/modules/auth/auth-client';
+import { API_URL } from '@/config';
+import { getToken } from '@/modules/auth/token';
 
 // native has no browser cookie jar — the better-auth expo plugin keeps the session
 // cookie in SecureStore, and we attach it to every api request explicitly (below).

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'bun:test';
 
-import { CyclePhase } from '@orm/app';
-
 import { generateSamples } from '@feature/biomarker-sim/generator';
 import {
   cycleDayFor,
@@ -11,6 +9,7 @@ import { DailyStat, RawSample } from '@system/timeseries/biomarker.store';
 import { BiomarkerMetric } from '@system/timeseries/timeseries.schema';
 
 import { classifyCycleDays, readinessScore } from './classify';
+import { CyclePhase } from './phase';
 
 const USER_ID = 'test-user-1';
 const DAY_MS = 24 * 60 * 60 * 1000;

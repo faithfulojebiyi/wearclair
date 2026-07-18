@@ -8,8 +8,11 @@ import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaClient } from '@orm/app';
 
+import { cycleAnchorFor } from '@feature/biomarker-sim/cycle-model';
 import { generateSamples } from '@feature/biomarker-sim/generator';
 import { classifyCycleDays } from '@feature/cycle-insights/classify';
+import { CyclePhase } from '@feature/cycle-insights/phase';
+import { buildHealthInsightDrafts } from '@feature/cycle-insights/health-insights';
 import { auth } from '@system/auth/auth';
 import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 import { TsdbPool } from '@system/timeseries/timeseries.pool';
@@ -61,7 +64,10 @@ try {
   // 3. backfill the raw firehose (~86k rows: 5 metrics x 5-min grid x 60 days)
   const to = new Date();
   const from = new Date(to.getTime() - HISTORY_DAYS * DAY_MS);
-  const samples = generateSamples({ userId, from, to });
+  // pin the cycle so the current period starts mid-month (the 18th) — the whole
+  // history + any later live sync share this anchor, so it's one continuous cycle.
+  const cycleAnchorMs = cycleAnchorFor(to);
+  const samples = generateSamples({ userId, from, to, cycleAnchorMs });
   const { inserted } = await store.insertBatch(userId, device.id, samples);
   console.log(
     `raw samples: ${samples.length} generated, ${inserted} inserted (rest deduped)`,
@@ -105,6 +111,10 @@ try {
       restingHrBpm: insight.restingHrBpm,
       hrvRmssdMs: insight.hrvRmssdMs,
       readiness: insight.readiness,
+      estradiolPgMl: insight.hormones.estradiolPgMl,
+      progesteroneNgMl: insight.hormones.progesteroneNgMl,
+      lhMiuMl: insight.hormones.lhMiuMl,
+      fshMiuMl: insight.hormones.fshMiuMl,
       sourceFrom: dayStart,
       sourceTo: dayEnd,
       sourceSampleCount: samplesPerDay.get(dayStart.getTime()) ?? 0,
@@ -119,7 +129,66 @@ try {
 
   console.log(`daily insights upserted: ${insights.length}`);
 
-  // 6. stamp the device so the next simulate-sync starts from "now"
+  // 6. backfill the Health Insights feed for the latest day (rule engine — no API
+  //    key needed at seed time; the worker uses AI on live syncs)
+  if (insights.length > 0) {
+    const today = insights[insights.length - 1];
+    const drafts = buildHealthInsightDrafts(insights);
+
+    for (const draft of drafts) {
+      const data = {
+        category: draft.category,
+        priority: draft.priority,
+        title: draft.title,
+        body: draft.body,
+        detail: draft.detail ?? null,
+      };
+
+      await prisma.healthInsight.upsert({
+        where: {
+          userId_date_key: { userId, date: today.date, key: draft.key },
+        },
+        create: { userId, date: today.date, key: draft.key, ...data },
+        update: data,
+      });
+    }
+
+    console.log(`health insights upserted: ${drafts.length}`);
+  }
+
+  // 6.5 seed cycle logs on the new `date` column: every menstrual day as a logged
+  //     period day (the cycle is anchored mid-month, so these are the runs starting
+  //     on the 18th and the prior cycle ~28 days before) — makes the user period
+  //     authoritative and gives the predictions ≥2 starts to derive the cycle length.
+  //     Plus a few symptom/mood/flow entries for the calendar, timeline, and Track.
+  const cycleLogs: { date: Date; type: string; value: string }[] = insights
+    .filter((i) => i.phase === CyclePhase.MENSTRUAL)
+    .map((i) => ({ date: i.date, type: 'period', value: 'logged' }));
+
+  if (insights.length >= 3) {
+    const recent = insights[insights.length - 2].date;
+    const older = insights[insights.length - 3].date;
+
+    cycleLogs.push(
+      { date: recent, type: 'symptom', value: 'Cramps, Bloating' },
+      { date: recent, type: 'mood', value: 'Calm' },
+      { date: older, type: 'flow', value: 'Medium' },
+    );
+  }
+
+  for (const log of cycleLogs) {
+    await prisma.cycleLog.upsert({
+      where: {
+        userId_date_type: { userId, date: log.date, type: log.type },
+      },
+      create: { userId, date: log.date, type: log.type, value: log.value },
+      update: { value: log.value },
+    });
+  }
+
+  console.log(`cycle logs upserted: ${cycleLogs.length}`);
+
+  // 7. stamp the device so the next simulate-sync starts from "now"
   await prisma.device.update({
     where: { id: device.id },
     data: { lastSyncedAt: to },

@@ -11,8 +11,8 @@ import {
   View,
 } from 'react-native';
 
-import { signIn } from '../lib/auth-client';
-import { c } from '../lib/theme';
+import { signIn } from '@/modules/auth/auth-client';
+import { c, panel, serifBold } from '@/ui/theme/theme';
 
 // prefilled with the seed script's demo credentials for a friction-free demo.
 export default function SignInScreen() {
@@ -35,6 +35,8 @@ export default function SignInScreen() {
       return;
     }
 
+    // the tabs guard re-fetches + hydrates the session on mount, so a plain navigate
+    // is safe — it no longer bounces on a stale null session.
     router.replace('/');
   };
 
@@ -58,14 +60,14 @@ export default function SignInScreen() {
           keyboardType="email-address"
           onChangeText={setEmail}
           placeholder="Email"
-          placeholderTextColor={c.textFaint}
+          placeholderTextColor={c.faint}
           style={styles.input}
           value={email}
         />
         <TextInput
           onChangeText={setPassword}
           placeholder="Password"
-          placeholderTextColor={c.textFaint}
+          placeholderTextColor={c.faint}
           secureTextEntry
           style={styles.input}
           value={password}
@@ -111,31 +113,26 @@ const styles = StyleSheet.create({
   },
   markText: { color: c.accent, fontSize: 34, fontWeight: '800' },
   brand: {
-    color: c.text,
-    fontSize: 34,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    color: c.ink,
+    fontFamily: serifBold,
+    fontSize: 36,
   },
-  tagline: { color: c.textMuted, fontSize: 15 },
+  tagline: { color: c.muted, fontSize: 15 },
   card: {
-    backgroundColor: c.surface,
-    borderColor: c.border,
+    backgroundColor: c.card,
     borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
     gap: 12,
     padding: 20,
   },
   input: {
-    backgroundColor: c.surface2,
-    borderColor: c.border,
+    backgroundColor: panel[4],
     borderRadius: 13,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: c.text,
+    color: c.ink,
     fontSize: 16,
     paddingHorizontal: 15,
     paddingVertical: 13,
   },
-  error: { color: c.accentText, fontSize: 14 },
+  error: { color: c.accentDeep, fontSize: 14 },
   button: {
     alignItems: 'center',
     backgroundColor: c.accent,
@@ -144,5 +141,5 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   buttonPressed: { opacity: 0.75 },
-  buttonText: { color: '#0E0E10', fontSize: 16, fontWeight: '700' },
+  buttonText: { color: c.onAccent, fontSize: 16, fontWeight: '700' },
 });

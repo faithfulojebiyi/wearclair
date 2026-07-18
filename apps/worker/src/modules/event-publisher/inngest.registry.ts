@@ -3,6 +3,7 @@ import { InngestFunction } from 'inngest';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 
 import { deviceBatchSyncedEvent } from '@worker/modules/insights/queues/device-batch-synced.event';
+import { refreshHealthInsightsEvent } from '@worker/modules/insights/queues/refresh-health-insights.event';
 import { WorkerService } from '@worker/worker.service';
 
 import { failedEvents } from './failed-events.function';
@@ -23,6 +24,7 @@ export const getInngestRegistry = ({
 
     // insights
     deviceBatchSyncedEvent({ commandBus, queryBus }),
+    refreshHealthInsightsEvent({ commandBus, queryBus }),
 
     failedEvents(),
   ];

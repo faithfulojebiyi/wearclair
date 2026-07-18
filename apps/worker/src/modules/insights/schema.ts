@@ -19,6 +19,9 @@ export type InsightDailyStat = z.infer<typeof insightDailyStatSchema>;
 export const upsertInsightsResultSchema = z
   .object({
     upserted: z.number().int(),
+    // set by the change-gated health-insight refresh when the day's signature was
+    // unchanged, so nothing was generated or written
+    skipped: z.boolean().optional(),
   })
   .meta({ id: 'UpsertInsightsResult' });
 

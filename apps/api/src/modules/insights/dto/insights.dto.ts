@@ -3,7 +3,9 @@ import { createZodDto } from 'nestjs-zod';
 import {
   DailyInsightListSchema,
   DailyInsightSchema,
+  GetHealthInsightsQuerySchema,
   GetInsightRangeQuerySchema,
+  HealthInsightListSchema,
 } from '../schema';
 
 export class DailyInsightDto extends createZodDto(DailyInsightSchema, {
@@ -16,4 +18,15 @@ export class DailyInsightListDto extends createZodDto(DailyInsightListSchema, {
 
 export class GetInsightRangeQueryDto extends createZodDto(
   GetInsightRangeQuerySchema,
+) {}
+
+export class HealthInsightListDto extends createZodDto(
+  HealthInsightListSchema,
+  {
+    codec: true,
+  },
+) {}
+
+export class GetHealthInsightsQueryDto extends createZodDto(
+  GetHealthInsightsQuerySchema,
 ) {}

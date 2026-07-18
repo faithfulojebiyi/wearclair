@@ -1,7 +1,6 @@
 import type { Agent } from '@mastra/core/agent';
 import { Mastra } from '@mastra/core/mastra';
 import { PostgresStore } from '@mastra/pg';
-import { RedisStreamsPubSub } from '@mastra/redis-streams';
 
 import { helloAgent } from './agents/hello.agent';
 
@@ -33,20 +32,9 @@ export function getMastra(extraAgents?: Record<string, Agent>): Mastra {
       connectionString,
     });
 
-    // Distributed pub/sub over Valkey so workflow run/step events propagate across
-    // processes (api/agent triggers ⇄ worker executes) — the default in-process
-    // EventEmitterPubSub can't bridge processes, so cross-process run results /
-    // streamed progress would never arrive. Falls back to the default when no
-    // Redis URL is configured.
-    const redisUrl = process.env.APP_REDIS_URL;
-    const pubsub = redisUrl
-      ? new RedisStreamsPubSub({ url: redisUrl, keyPrefix: 'wearclair-mastra' })
-      : undefined;
-
     instance = new Mastra({
       agents: { hello: helloAgent, ...(extraAgents ?? {}) },
       storage,
-      ...(pubsub ? { pubsub } : {}),
     });
   }
 

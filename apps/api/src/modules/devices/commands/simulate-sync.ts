@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
+import { cycleAnchorFor } from '@feature/biomarker-sim/cycle-model';
 import { generateSamples } from '@feature/biomarker-sim/generator';
 import { AlsService } from '@system/als/als.service';
 import { AppPrismaService } from '@system/database/database.service';
@@ -59,7 +60,14 @@ export class SimulateSyncCommandHandler implements ICommandHandler<SimulateSyncC
       ),
     );
 
-    const samples = generateSamples({ userId, from, to });
+    // same mid-month cycle anchor the seed uses, so live syncs continue the seeded
+    // cycle without a discontinuity at "now".
+    const samples = generateSamples({
+      userId,
+      from,
+      to,
+      cycleAnchorMs: cycleAnchorFor(to),
+    });
 
     if (samples.length === 0) {
       throw new BadRequestException('device is already up to date');

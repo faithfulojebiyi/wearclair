@@ -7,8 +7,11 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   DailyInsightDto,
   DailyInsightListDto,
+  GetHealthInsightsQueryDto,
   GetInsightRangeQueryDto,
+  HealthInsightListDto,
 } from './dto/insights.dto';
+import { GetHealthInsightsQuery } from './queries/get-health-insights';
 import { GetInsightRangeQuery } from './queries/get-insight-range';
 import { GetTodayInsightQuery } from './queries/get-today-insight';
 
@@ -21,6 +24,12 @@ export class InsightsController {
   @Get('today')
   async getToday() {
     return this.queryBus.execute(new GetTodayInsightQuery());
+  }
+
+  @ZodResponse({ type: HealthInsightListDto })
+  @Get('health')
+  async getHealth(@Query() dto: GetHealthInsightsQueryDto) {
+    return this.queryBus.execute(new GetHealthInsightsQuery(dto));
   }
 
   @ZodResponse({ type: DailyInsightListDto })

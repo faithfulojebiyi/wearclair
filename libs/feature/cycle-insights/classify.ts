@@ -4,9 +4,10 @@
 // has to recover the signal from the rollups alone (the same inputs a real device
 // stream would produce).
 
-import { CyclePhase } from '@orm/app';
-
 import { DailyStat } from '@system/timeseries/biomarker.store';
+
+import { HormoneEstimate, estimateHormones } from './hormones';
+import { CyclePhase } from './phase';
 
 export interface PerDayInsight {
   date: Date;
@@ -16,6 +17,7 @@ export interface PerDayInsight {
   restingHrBpm: number;
   hrvRmssdMs: number;
   readiness: number;
+  hormones: HormoneEstimate;
 }
 
 interface DayMetrics {
@@ -208,6 +210,7 @@ export const classifyCycleDays = (stats: DailyStat[]): PerDayInsight[] => {
       restingHrBpm: Number(hr.toFixed(1)),
       hrvRmssdMs: Number(hrv.toFixed(1)),
       readiness,
+      hormones: estimateHormones(cycleDay),
     };
   });
 };

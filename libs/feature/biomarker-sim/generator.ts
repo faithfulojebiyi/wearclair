@@ -22,6 +22,8 @@ export interface GenerateSamplesArgs {
   from: Date;
   to: Date;
   metrics?: BiomarkerMetric[];
+  // pin cycle day 1 to this instant (see cycleAnchorFor); omit for the per-user hash
+  cycleAnchorMs?: number;
 }
 
 // per-sample noise, seeded by (user, timestamp, metric) — no stream state, so
@@ -42,7 +44,7 @@ export const generateSamples = (args: GenerateSamplesArgs): RawSample[] => {
 
   for (let time = start; time <= end; time += INTERVAL_MS) {
     const ts = new Date(time);
-    const cycleDay = cycleDayFor(args.userId, ts);
+    const cycleDay = cycleDayFor(args.userId, ts, args.cycleAnchorMs);
     const hourOfDay = ts.getUTCHours() + ts.getUTCMinutes() / 60;
 
     for (const metric of metrics) {

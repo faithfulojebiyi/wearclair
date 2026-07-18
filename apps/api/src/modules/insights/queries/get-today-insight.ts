@@ -3,6 +3,7 @@ import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 
 import { DailyInsight } from '@orm/app';
 
+import { toCyclePhase } from '@feature/cycle-insights/phase';
 import { AlsService } from '@system/als/als.service';
 import { AppPrismaService } from '@system/database/database.service';
 
@@ -11,11 +12,18 @@ import { DailyInsightDto } from '../dto/insights.dto';
 export const toInsightPayload = (insight: DailyInsight) => ({
   date: insight.date,
   cycleDay: insight.cycleDay,
-  phase: insight.phase,
+  // narrow the plain string column to the CyclePhase union at the read boundary
+  phase: toCyclePhase(insight.phase),
   basalTempC: insight.basalTempC,
   restingHrBpm: insight.restingHrBpm,
   hrvRmssdMs: insight.hrvRmssdMs,
   readiness: insight.readiness,
+  hormones: {
+    estradiolPgMl: insight.estradiolPgMl,
+    progesteroneNgMl: insight.progesteroneNgMl,
+    lhMiuMl: insight.lhMiuMl,
+    fshMiuMl: insight.fshMiuMl,
+  },
   sourceFrom: insight.sourceFrom,
   sourceTo: insight.sourceTo,
   sourceSampleCount: insight.sourceSampleCount,
