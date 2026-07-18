@@ -6,7 +6,7 @@ Wearclair is a continuous hormone-intelligence platform for a wrist wearable. It
 
 The repository contains a Fastify/NestJS API, a background worker, shared domain and infrastructure libraries, an Expo mobile app, and a separate Next.js dashboard. High-volume biomarker data lives in TimescaleDB; relational product data and derived insights live in a Prisma-managed PostgreSQL database.
 
-[Wearclair system architecture](./assets/architecture/system-architecture.svg)
+![Wearclair system architecture](./assets/architecture/system-architecture.svg)
 
 ## Architecture at a glance
 
@@ -27,7 +27,7 @@ Clair band or local simulator
   → mobile and dashboard clients
 ```
 
-Wearclair biomarker data flow
+![Wearclair biomarker data flow](./assets/architecture/biomarker-data-flow.svg)
 
 Important properties of this flow:
 
