@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 
 import { devicesControllerSyncDevice } from '@/api/generated/devices/devices';
-import { clearQueued, getQueued } from './local-store';
+import { clearQueued, getQueued, store } from './local-store';
 
 const FLUSH_MS = 8000;
 const MAX_BATCH = 500;
@@ -12,17 +12,27 @@ const MAX_BATCH = 500;
 // worker insights). On success the rows are removed locally and the server-derived
 // queries (insights, series) are invalidated so the UI reflects the new data. Runs
 // app-wide (mounted once, behind auth) so streaming and syncing are decoupled.
-export const useVitalsSync = (deviceId: string | undefined): void => {
+export const useVitalsSync = (
+  deviceId: string | undefined,
+  userId: string | undefined,
+): void => {
   const queryClient = useQueryClient();
   const inFlight = useRef(false);
 
   useEffect(() => {
-    if (!deviceId) {
+    if (!deviceId || !userId) {
       return;
     }
 
     const flush = async () => {
       if (inFlight.current) {
+        return;
+      }
+
+      // never upload a queue this account doesn't own — a previous user's
+      // samples must not land on the current user's device, even in the window
+      // before the account-isolation claim settles
+      if (store.getValue('ownerUserId') !== userId) {
         return;
       }
 
@@ -66,5 +76,5 @@ export const useVitalsSync = (deviceId: string | undefined): void => {
     const interval = setInterval(flush, FLUSH_MS);
 
     return () => clearInterval(interval);
-  }, [deviceId, queryClient]);
+  }, [deviceId, userId, queryClient]);
 };

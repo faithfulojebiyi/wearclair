@@ -114,6 +114,7 @@ export const pruneQueue = (now: number = Date.now()): void => {
 export const clearAllLocalData = (): void => {
   store.transaction(() => {
     store.delTables();
+    store.delValue('ownerUserId');
     store.setValue('connected', false);
     store.setValue('lastEmitTs', 0);
     store.setValue('lastSyncTs', 0);
@@ -121,28 +122,44 @@ export const clearAllLocalData = (): void => {
   });
 };
 
+// single-owner guard for the (persisted) store: the store is stamped with the
+// account it belongs to, and a different account claiming it destroys the previous
+// one's health data — including anything a dead session's cleanup never wiped —
+// before it can be shown or uploaded. autoSave propagates the wipe to disk. Claim
+// only after the persisted snapshot has loaded (initPersistence), or the previous
+// owner's snapshot would overwrite the claim.
+export const claimStore = (userId: string): void => {
+  const owner = store.getValue('ownerUserId');
+
+  if (owner !== undefined && owner !== userId) {
+    clearAllLocalData();
+  }
+
+  store.setValue('ownerUserId', userId);
+};
+
 // best-effort persistence: browser storage on web, expo-sqlite on native — resolved
 // via the platform-split local-persister(.web).ts twins so the wrong platform's
 // driver never enters the bundle (Metro statically bundles even dynamic imports).
-// A failure here must never break streaming.
-let persisterStarted = false;
+// A failure here must never break streaming. Memoized promise so callers (the
+// account-isolation guard) can await "persisted snapshot is loaded".
+let persistencePromise: Promise<void> | null = null;
 
-export const initPersistence = async (): Promise<void> => {
-  if (persisterStarted) {
-    return;
-  }
+export const initPersistence = (): Promise<void> => {
+  persistencePromise ??= (async () => {
+    try {
+      const { createPlatformPersister } = await import('./local-persister');
+      const persister = await createPlatformPersister(store);
+      await persister.load();
+      // apply retention to whatever a previous session left behind
+      pruneQueue();
+      await persister.startAutoSave();
+    } catch {
+      // in-memory only — streaming + sync still work, data just won't survive
+      // restart. reset so a later call may retry.
+      persistencePromise = null;
+    }
+  })();
 
-  persisterStarted = true;
-
-  try {
-    const { createPlatformPersister } = await import('./local-persister');
-    const persister = await createPlatformPersister(store);
-    await persister.load();
-    // apply retention to whatever a previous session left behind
-    pruneQueue();
-    await persister.startAutoSave();
-  } catch {
-    persisterStarted = false;
-    // in-memory only — streaming + sync still work, data just won't survive restart
-  }
+  return persistencePromise;
 };

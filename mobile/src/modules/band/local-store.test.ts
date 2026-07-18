@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 
 import {
   QUEUE_TABLE,
+  claimStore,
   clearAllLocalData,
   getQueued,
   pruneQueue,
@@ -57,5 +58,40 @@ describe('local vitals store retention', () => {
     expect(store.getRowIds(QUEUE_TABLE).length).toBe(0);
     expect(store.getValue('syncedTotal')).toBe(0);
     expect(store.getValue('connected')).toBe(false);
+  });
+});
+
+describe('local store account isolation', () => {
+  beforeEach(() => {
+    clearAllLocalData();
+  });
+
+  it('re-claiming for the same user keeps the queue (session refresh, app restart)', () => {
+    claimStore('user-a');
+    recordVitals(Date.now(), vitals);
+
+    claimStore('user-a');
+
+    expect(getQueued().length).toBe(1);
+    expect(store.getValue('ownerUserId')).toBe('user-a');
+  });
+
+  it('claiming for a different user destroys the previous owner health data', () => {
+    claimStore('user-a');
+    recordVitals(Date.now(), vitals);
+
+    claimStore('user-b');
+
+    expect(getQueued().length).toBe(0);
+    expect(store.getRowIds(QUEUE_TABLE).length).toBe(0);
+    expect(store.getValue('ownerUserId')).toBe('user-b');
+  });
+
+  it('clearAllLocalData removes the owner stamp with the data', () => {
+    claimStore('user-a');
+
+    clearAllLocalData();
+
+    expect(store.getValue('ownerUserId')).toBeUndefined();
   });
 });

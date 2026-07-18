@@ -15,6 +15,7 @@ import { useSession } from '@/modules/auth/auth-client';
 import { useDevices } from '@/modules/band/queries/use-devices';
 import { c } from '@/ui/theme/theme';
 import { getToken, setToken } from '@/modules/auth/token';
+import { useAccountIsolation } from '@/modules/band/use-account-isolation';
 import { useVitalsSync } from '@/modules/band/use-vitals-sync';
 
 export default function TabsLayout() {
@@ -54,8 +55,13 @@ export default function TabsLayout() {
   // the device to sync the local vitals queue against (first paired band).
   const devices = useDevices(Boolean(session));
 
+  // account isolation BEFORE the sync engine: claim/wipe the local vitals store for
+  // the signed-in user, and stop the band stream when the session dies without an
+  // explicit sign-out (expiry/revocation).
+  useAccountIsolation(session?.user?.id, resolved && !isPending);
+
   // background vitals sync engine — drains the local queue to the backend app-wide.
-  useVitalsSync(devices.data?.devices[0]?.id);
+  useVitalsSync(devices.data?.devices[0]?.id, session?.user?.id);
 
   // web: persist the session token so the Orval axios client can send it as a Bearer
   // header (no-op on native, where the cookie header drives auth). If any query

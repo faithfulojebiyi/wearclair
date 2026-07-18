@@ -12,7 +12,7 @@ const emit = (userId: string) => {
   recordVitals(now, sampleVitals(userId, new Date(now)));
 };
 
-export const connectBand = (userId: string): void => {
+export const connectBand = (userId: string, emitMs: number = EMIT_MS): void => {
   if (timer) {
     return;
   }
@@ -20,7 +20,7 @@ export const connectBand = (userId: string): void => {
   store.setValue('connected', true);
   emit(userId); // first reading immediately on connect
 
-  timer = setInterval(() => emit(userId), EMIT_MS);
+  timer = setInterval(() => emit(userId), emitMs);
 };
 
 export const disconnectBand = (): void => {
