@@ -1,16 +1,18 @@
 # Wearclair
 
+**A note on scope:** I built this over a weekend, in a couple of focused sessions, as a working demonstration of how I'd approach this problem space. It isn't production (no real device, demo-scale data), but the patterns are the ones I'd ship to production: typed boundaries, idempotent ingestion, reviewed migrations, and reversible architecture decisions ([written up here](./assets/docs/architecture-decisions.md)).
+
 Wearclair is a continuous hormone-intelligence platform for a wrist wearable. It turns temperature, heart rate, HRV, respiratory, EDA, arterial stiffness, perfusion, SpO₂, bioimpedance, and motion samples into cycle-phase, readiness, hormone, and health insights.
 
 The repository contains a Fastify/NestJS API, a background worker, shared domain and infrastructure libraries, an Expo mobile app, and a separate Next.js dashboard. High-volume biomarker data lives in TimescaleDB; relational product data and derived insights live in a Prisma-managed PostgreSQL database.
 
-[![Wearclair system architecture](./assets/architecture/system-architecture.png)](./assets/architecture/system-architecture.svg)
+[Wearclair system architecture](./assets/architecture/system-architecture.svg)
 
 ## Architecture at a glance
 
 The API owns authenticated HTTP interactions and publishes typed events. Inngest invokes retryable worker stages that read time-series rollups and upsert derived product data. Clients query the API rather than either database directly.
 
-The system diagram is embedded above and stored as a self-contained SVG. The complete architecture reference follows in this README so setup, runtime boundaries, data movement, reliability, and extension guidance stay in one place.
+The system diagram is embedded above and stored as a self-contained SVG. The complete architecture reference follows in this README so setup, runtime boundaries, data movement, reliability, and extension guidance stay in one place. The reasoning behind the load-bearing choices (TimescaleDB over plain Postgres, Inngest over a Redis-backed queue, and the api/worker split) is written up in [assets/docs/architecture-decisions.md](./assets/docs/architecture-decisions.md).
 
 ## Data lifecycle
 
@@ -25,7 +27,7 @@ Clair band or local simulator
   → mobile and dashboard clients
 ```
 
-![Wearclair biomarker data flow](./assets/architecture/biomarker-data-flow.svg)
+Wearclair biomarker data flow
 
 Important properties of this flow:
 
@@ -37,19 +39,19 @@ Important properties of this flow:
 
 ## Runtime architecture
 
-| Component | Responsibility | Entry point |
-| --- | --- | --- |
-| Expo mobile | Authentication, buffered band simulation/sync, and consumer views | `mobile/src/app/` |
-| Next.js dashboard | Browser client and authenticated workspace | `dashboard/src/app/` |
-| API | Fastify/NestJS REST API, OpenAPI, CQRS, Mastra routes, and event publication | `apps/api/src/main.ts` |
-| Worker | Separate NestJS application serving retryable Inngest functions | `apps/worker/src/main.ts` |
-| Inngest | Typed event transport, durable execution, deduplication, retries, and step memoization | `inngest.yaml` |
-| App PostgreSQL | Auth, devices, sync batches, cycle logs, and derived insights | `prisma/app/schema.prisma` |
-| TimescaleDB | Raw biomarker samples and 1-hour/1-day aggregates | `timeseries/migrations/` |
-| Mastra storage | Agent runtime state and memory, isolated from product data | `libs/providers/mastra/` |
-| Shared libraries | Infrastructure, providers, simulation, and pure insight logic | `libs/` |
+| Component         | Responsibility                                                                         | Entry point                |
+| ----------------- | -------------------------------------------------------------------------------------- | -------------------------- |
+| Expo mobile       | Authentication, buffered band simulation/sync, and consumer views                      | `mobile/src/app/`          |
+| Next.js dashboard | Browser client and authenticated workspace                                             | `dashboard/src/app/`       |
+| API               | Fastify/NestJS REST API, OpenAPI, CQRS, Mastra routes, and event publication           | `apps/api/src/main.ts`     |
+| Worker            | Separate NestJS application serving retryable Inngest functions                        | `apps/worker/src/main.ts`  |
+| Inngest           | Typed event transport, durable execution, deduplication, retries, and step memoization | `inngest.yaml`             |
+| App PostgreSQL    | Auth, devices, sync batches, cycle logs, and derived insights                          | `prisma/app/schema.prisma` |
+| TimescaleDB       | Raw biomarker samples and 1-hour/1-day aggregates                                      | `timeseries/migrations/`   |
+| Mastra storage    | Agent runtime state and memory, isolated from product data                             | `libs/providers/mastra/`   |
+| Shared libraries  | Infrastructure, providers, simulation, and pure insight logic                          | `libs/`                    |
 
-The API and worker are separate NestJS applications. They share libraries but never import one another. The worker does not use API request-scoped ALS; user identity required by background work travels in typed event data. Inngest is the event and durable-execution layer between them—there is no BullMQ queue in this path.
+The API and worker are separate NestJS applications. They share libraries but never import one another. The worker does not use API request-scoped ALS; user identity required by background work travels in typed event data. Inngest is the event and durable-execution layer between them; there is no BullMQ queue in this path.
 
 ### API request lifecycle
 
@@ -151,7 +153,7 @@ The Expo app uses generated OpenAPI functions with TanStack Query. After sync, i
 - `StorageModule` wraps S3-compatible storage. Local Ministack exposes it on port `4567` and initializes `wearclair-uploads`.
 - `ResendModule` wraps outbound email delivery.
 - The API Mastra adapter serves HTTP routes; the worker uses the shared Mastra runtime without importing API code.
-- Observability uses Pino—pretty logs in development and JSON in production. OpenTelemetry and Sentry are not installed.
+- Observability uses Pino: pretty logs in development and JSON in production. OpenTelemetry and Sentry are not installed.
 
 ## Repository map
 
@@ -272,74 +274,3 @@ bun --cwd mobile run gen:api  # API must be running
 bun --cwd dashboard run dev
 bun --cwd dashboard run gen:api  # API must be running
 ```
-
-## Local services
-
-| Service | Port |
-| --- | ---: |
-| API | 3310 |
-| Worker | 3311 |
-| Dashboard | 3010 |
-| Inngest dev UI | 8288 |
-| PostgreSQL/TimescaleDB | 6543 |
-| Ministack S3 gateway | 4567 |
-
-The local TimescaleDB container hosts three logical databases: `wearclair` for product data, `wearclair_tsdb` for biomarker time series, and `wearclair_mastra` for Mastra runtime state.
-
-Important environment boundaries:
-
-| Variable | Purpose |
-| --- | --- |
-| `APP_DATABASE_URL` | Relational product database |
-| `APP_DATABASE_REPLICA_URL` | Optional relational read replica |
-| `TSDB_DATABASE_URL` | Raw and aggregated biomarker database |
-| `MASTRA_DATABASE_URL` | Mastra runtime persistence |
-| `APP_REDIS_URL` | Optional shared cache backend |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | Credentialed CORS allowlist |
-| `INNGEST_DEV=1` | Route SDK traffic to local Inngest |
-| `ANTHROPIC_API_KEY` | Optional AI health-insight generation |
-
-The API and worker load separate `.env` files, Prisma CLI commands read `prisma/.env`, and each client owns its environment configuration. Use the checked-in `.env.example` files as the current variable reference and never commit secrets.
-
-## Extending Wearclair
-
-### Add an endpoint
-
-Add a command for a write or a query for a read inside the owning API feature. Define Zod schemas and `createZodDto` classes, dispatch from a thin controller, register the handler in the feature module, and keep persistence behind `AppPrismaService` or `BiomarkerStore`. Response DTOs use codec mode.
-
-### Add a biomarker metric
-
-Extend the shared time-series Zod enum and the simulator or classifier mappings that understand it. The raw table remains narrow, so adding a metric does not add a column. Regenerate OpenAPI clients when the public schema changes.
-
-### Add an event or worker stage
-
-Define the event key and Zod payload under `libs/system/queues`, publish through `EventPublisherService`, and register the consumer in the owning Inngest registry. Pass identity in event data and isolate retryable work in named `step.run` stages.
-
-### Change persistence
-
-Relational models belong in `prisma/app/schema.prisma`; validate them with `bun run prisma:generate`. Do not hand-write Prisma migration files. Time-series DDL is reviewed SQL under `timeseries/migrations/` and applied with `bun run tsdb:migrate`.
-
-### Add a client screen
-
-Expose the server contract through Zod/OpenAPI, regenerate the relevant Orval client, and build the screen with generated request and response types. Keep derived health logic on the server so mobile and dashboard render the same source of truth.
-
-## Code conventions
-
-- Import through `@api/*`, `@worker/*`, `@system/*`, `@providers/*`, `@feature/*`, and `@orm/app` aliases.
-- API and worker applications never import from each other; shared libraries never import either app.
-- The worker never imports `@system/als`; identity required by background work travels in event data.
-- HTTP, service, CQRS, event, and Inngest boundary types derive from Zod schemas.
-- Relational access goes through `AppPrismaService`; time-series access goes through `BiomarkerStore`.
-- Queue event names and payload schemas are centralized in `libs/system/queues`.
-- Never generate Prisma migration files as a routine side effect. Time-series migrations are deliberately reviewed SQL.
-
-These boundaries are architectural invariants: background work remains replay-safe, event contracts stay centralized, the worker never depends on API request context, and clients consume server-owned derived data through generated contracts.
-
-## Diagram maintenance
-
-The committed SVGs are canonical, self-contained artwork with embedded product assets:
-
-- [System architecture](./assets/architecture/system-architecture.svg)
-- [Biomarker data flow](./assets/architecture/biomarker-data-flow.svg)
-
-Preserve their scalable `viewBox`, accessible title and description, dotted component/connector language, source-colored arrows, and distinction between current and planned behavior.
