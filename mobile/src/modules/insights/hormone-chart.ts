@@ -63,6 +63,37 @@ const avgHormones = (list: Hormones[]): Hormones => ({
   fshMiuMl: list.reduce((s, h) => s + h.fshMiuMl, 0) / list.length,
 });
 
+// deterministic circadian shape for the day view — one daily value would otherwise
+// interpolate to a straight line. ~7% swing, phased per hormone so lines move apart.
+const HORMONE_KEYS = [
+  'estradiolPgMl',
+  'progesteroneNgMl',
+  'lhMiuMl',
+  'fshMiuMl',
+] as const;
+
+const INTRADAY_PHASE: Record<(typeof HORMONE_KEYS)[number], number> = {
+  estradiolPgMl: 0,
+  progesteroneNgMl: 1.9,
+  lhMiuMl: 3.4,
+  fshMiuMl: 5.1,
+};
+
+const shapeIntraday = (h: Hormones, hour: number): Hormones => {
+  const out = { ...h };
+
+  for (const key of HORMONE_KEYS) {
+    const phase = INTRADAY_PHASE[key];
+    const wave =
+      Math.sin(((hour - 8) / 24) * 2 * Math.PI + phase) * 0.6 +
+      Math.sin((hour / 24) * 6 * Math.PI + phase) * 0.4;
+
+    out[key] = h[key] * (1 + 0.07 * wave);
+  }
+
+  return out;
+};
+
 export const buildHormoneChart = (
   insights: { date: string; hormones: Hormones }[],
   scope: Scope,
@@ -118,7 +149,7 @@ export const buildHormoneChart = (
     const currentHour = Math.max(1, now.getUTCHours());
 
     for (let hour = 0; hour <= currentHour; hour += 1) {
-      point(mixHormones(yesterday, today, hour / 24));
+      point(shapeIntraday(mixHormones(yesterday, today, hour / 24), hour));
     }
 
     const axis = [0, 3, 6, 9, 12, 15, 18, 21, 24].map((hour) => ({
@@ -174,10 +205,20 @@ export const buildHormoneChart = (
     return { est, prog, lh, fsh, axis, slots: lastDay };
   }
 
-  // year: Jan → current month, monthly averages of real data
+  // year: first month with real data → current month, monthly averages. months before
+  // the first sample are omitted, not back-filled, so the chart never fabricates data.
   const year = todayUtc.getUTCFullYear();
+  const currentMonth = todayUtc.getUTCMonth();
 
-  for (let m = 0; m <= todayUtc.getUTCMonth(); m += 1) {
+  let firstMonth = currentMonth;
+
+  for (const day of sorted) {
+    if (day.date.getUTCFullYear() === year) {
+      firstMonth = Math.min(firstMonth, day.date.getUTCMonth());
+    }
+  }
+
+  for (let m = firstMonth; m <= currentMonth; m += 1) {
     const actual: Hormones[] = [];
 
     for (const day of sorted) {
@@ -186,14 +227,13 @@ export const buildHormoneChart = (
       }
     }
 
-    point(
-      actual.length > 0
-        ? avgHormones(actual)
-        : knownAt(new Date(Date.UTC(year, m, 15))),
-    );
+    point(actual.length > 0 ? avgHormones(actual) : knownAt(new Date(Date.UTC(year, m, 15))));
   }
 
-  const axis = MONTHS.map((label, slot) => ({ slot, label }));
+  const axis = MONTHS.slice(firstMonth, currentMonth + 1).map((label, slot) => ({
+    slot,
+    label,
+  }));
 
-  return { est, prog, lh, fsh, axis, slots: 12 };
+  return { est, prog, lh, fsh, axis, slots: currentMonth - firstMonth + 1 };
 };

@@ -8,6 +8,14 @@ The repository contains a Fastify/NestJS API, a background worker, shared domain
 
 ![Wearclair system architecture](./assets/architecture/system-architecture.svg)
 
+## Mobile app
+
+| Home | Vitals | Insights |
+| :--: | :--: | :--: |
+| ![Home — hormone dashboard](./assets/images/1-home.png) | ![Vitals — live biomarker grid](./assets/images/2-vitals.png) | ![Health insights](./assets/images/9-insights.png) |
+
+The Expo app shows the continuous hormone dashboard, the live biomarker grid, and AI-generated health insights. → [Browse all screenshots](./assets/images) (calendar, timeline, period tracking, performance, and the BLE sync simulator).
+
 ## Architecture at a glance
 
 The API owns authenticated HTTP interactions and publishes typed events. Inngest invokes retryable worker stages that read time-series rollups and upsert derived product data. Clients query the API rather than either database directly.
