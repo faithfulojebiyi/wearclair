@@ -30,10 +30,22 @@ const staleBatch = (
   nextPublishAttemptAt: minutesAgo(1),
 });
 
-const makeDeps = (batches: ReturnType<typeof staleBatch>[], struggling = 0) => {
-  const findMany = mock(async () => batches);
-  const count = mock(async () => struggling);
+const makeDeps = (
+  batches: ReturnType<typeof staleBatch>[],
+  options: {
+    struggling?: number;
+    received?: ReturnType<typeof staleBatch>[];
+    durable?: number;
+  } = {},
+) => {
+  // the sweep issues two findMany calls: due RAW_WRITTEN batches and stranded
+  // RECEIVED strays — dispatch the fake on the queried status
+  const findMany = mock(async (args: { where?: { status?: string } }) =>
+    args?.where?.status === 'RECEIVED' ? (options.received ?? []) : batches,
+  );
+  const count = mock(async () => options.struggling ?? 0);
   const updateMany = mock(async () => ({ count: 1 }));
+  const countWindow = mock(async () => options.durable ?? 0);
 
   const prisma = {
     $primary: () => ({ syncBatch: { findMany, count } }),
@@ -42,7 +54,7 @@ const makeDeps = (batches: ReturnType<typeof staleBatch>[], struggling = 0) => {
 
   const sendEvent = mock(async () => ({ ids: ['evt'] }));
 
-  return { prisma, findMany, count, updateMany, sendEvent };
+  return { prisma, findMany, count, updateMany, sendEvent, countWindow };
 };
 
 const makeHandler = (deps: ReturnType<typeof makeDeps>) =>
@@ -50,6 +62,8 @@ const makeHandler = (deps: ReturnType<typeof makeDeps>) =>
     // @ts-expect-error — minimal fake prisma for the handler under test
     deps.prisma,
     { sendEvent: deps.sendEvent },
+    // @ts-expect-error — minimal fake store for the handler under test
+    { countWindow: deps.countWindow },
   );
 
 describe('RepublishStaleBatchesCommandHandler', () => {
@@ -146,10 +160,9 @@ describe('RepublishStaleBatchesCommandHandler', () => {
   });
 
   it('republishes every fetched row, even far past the alert threshold', async () => {
-    deps = makeDeps(
-      [staleBatch('very-late', { publishAttempts: 8 })],
-      3, // strugglers exist in the table
-    );
+    deps = makeDeps([staleBatch('very-late', { publishAttempts: 8 })], {
+      struggling: 3, // strugglers exist in the table
+    });
     const errorSpy = spyOn(Logger.prototype, 'error').mockImplementation(
       () => undefined,
     );
@@ -169,5 +182,51 @@ describe('RepublishStaleBatchesCommandHandler', () => {
     const capped = nextPublishAttemptAt(50, new Date(0));
 
     expect(capped.getTime()).toBe(STALE_AFTER_MS * 2 ** MAX_BACKOFF_EXPONENT);
+  });
+
+  it('promotes a stranded RECEIVED batch whose raw data committed, and publishes it', async () => {
+    // crash between the tsdb commit and the ledger update: durable rows exist
+    deps = makeDeps([], {
+      received: [staleBatch('stranded')],
+      durable: 42,
+    });
+    const handler = makeHandler(deps);
+
+    const result = await handler.execute(new RepublishStaleBatchesCommand());
+
+    expect(result.republished).toBe(1);
+
+    // ledger resumed from tsdb ground truth: RAW_WRITTEN with the durable count
+    // @ts-expect-error — mock call args are loosely typed
+    const promote = deps.updateMany.mock.calls[0][0];
+    expect(promote?.where?.status).toBe('RECEIVED');
+    expect(promote?.data?.status).toBe('RAW_WRITTEN');
+    expect(promote?.data?.sampleCount).toBe(42);
+
+    // published in the same sweep with the deterministic event id + real count
+    // @ts-expect-error — mock call args are loosely typed
+    const eventArgs = deps.sendEvent.mock.calls[0][0];
+    expect(eventArgs?.id).toBe('device-batch-stranded');
+    expect(eventArgs?.data?.sampleCount).toBe(42);
+  });
+
+  it('marks a stranded RECEIVED batch FAILED when no raw data ever committed', async () => {
+    deps = makeDeps([], {
+      received: [staleBatch('never-landed')],
+      durable: 0,
+    });
+    const handler = makeHandler(deps);
+
+    const result = await handler.execute(new RepublishStaleBatchesCommand());
+
+    expect(result.republished).toBe(0);
+    expect(deps.sendEvent).not.toHaveBeenCalled();
+
+    // FAILED (revivable by a clientBatchId retry), still guarded on RECEIVED so
+    // a concurrent ingest completing first wins
+    // @ts-expect-error — mock call args are loosely typed
+    const fail = deps.updateMany.mock.calls[0][0];
+    expect(fail?.where?.status).toBe('RECEIVED');
+    expect(fail?.data?.status).toBe('FAILED');
   });
 });

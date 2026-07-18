@@ -47,12 +47,14 @@ const makeDeps = () => {
   };
 
   const insertBatch = mock(async () => ({ inserted: 2 }));
+  const countWindow = mock(async () => 2);
   const sendEvent = mock(async () => ({ ids: ['evt'] }));
   const als = { ctx: { get: () => 'u1' } };
 
   return {
     prisma,
     insertBatch,
+    countWindow,
     sendEvent,
     als,
     create,
@@ -66,7 +68,7 @@ const makeHandler = (deps: ReturnType<typeof makeDeps>) =>
   new IngestBatchCommandHandler(
     // @ts-expect-error — minimal fake prisma for the handler under test
     deps.prisma,
-    { insertBatch: deps.insertBatch },
+    { insertBatch: deps.insertBatch, countWindow: deps.countWindow },
     { sendEvent: deps.sendEvent },
     deps.als,
   );
@@ -189,6 +191,30 @@ describe('IngestBatchCommandHandler', () => {
     const nextAttemptAt = attemptBumps[0][0]?.data?.nextPublishAttemptAt;
     expect(nextAttemptAt).toBeInstanceOf(Date);
     expect((nextAttemptAt as Date).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('stamps the durable window count as sampleCount on a replay that inserts nothing', async () => {
+    // retry of a batch stranded RECEIVED by a crash after the tsdb commit: the
+    // dedupe index swallows every sample (inserted 0), but the original rows are
+    // already durable — sampleCount must reflect them, not this request's insert
+    deps.insertBatch.mockImplementation(async () => ({ inserted: 0 }));
+    deps.countWindow.mockImplementation(async () => 42);
+    const handler = makeHandler(deps);
+
+    await handler.execute(
+      // @ts-expect-error — minimal dto
+      new IngestBatchCommand('d1', {
+        samples,
+        clientBatchId: 'client-batch-1',
+      }),
+    );
+
+    const rawWritten = deps.updateMany.mock.calls
+      // @ts-expect-error — mock call args are loosely typed
+      .map((call) => call[0]?.data)
+      .find((data) => data?.status === 'RAW_WRITTEN');
+
+    expect(rawWritten?.sampleCount).toBe(42);
   });
 
   it('marks the batch FAILED and rethrows when the raw tsdb write fails', async () => {

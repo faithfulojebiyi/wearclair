@@ -4,16 +4,23 @@ import { Logger } from '@nestjs/common';
 import { AppPrismaService } from '@system/database/database.service';
 import { EVENT_KEYS } from '@system/queues/events.config';
 import { SYNC_BATCH_STATUS } from '@system/schema/sync-batch.schema';
+import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 
 import { nextPublishAttemptAt, STALE_AFTER_MS } from '../publish-backoff';
 import { EventPublisherService } from '../../event-publisher/event-publisher.service';
 
 /**
- * Recovery sweep for RAW_WRITTEN batches whose derivation event never reached
- * inngest. Safe to republish (same deterministic event id + idempotent worker).
- * Retries never stop — each failed attempt persists the next due time
- * (exponential backoff, see publish-backoff.ts), so the sweep queries due-ness
- * directly and not-yet-due rows can't crowd due ones out of the page.
+ * Recovery sweep for batches the ingest lifecycle lost track of:
+ * - RAW_WRITTEN whose derivation event never reached inngest — republish. Safe
+ *   (same deterministic event id + idempotent worker); retries never stop, each
+ *   failed attempt persists the next due time (exponential backoff, see
+ *   publish-backoff.ts), so the sweep queries due-ness directly and not-yet-due
+ *   rows can't crowd due ones out of the page.
+ * - RECEIVED older than the staleness window — a crash in the gap between the
+ *   tsdb commit and the ledger update. Resolved against tsdb ground truth:
+ *   durable rows in the window mean the raw write committed (promote to
+ *   RAW_WRITTEN and publish); none mean it never did (FAILED, which a client
+ *   retry on the same clientBatchId revives).
  */
 const ALERT_AFTER_ATTEMPTS = 5;
 const SWEEP_LIMIT = 100;
@@ -35,6 +42,7 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
   constructor(
     private readonly appPrismaService: AppPrismaService,
     private readonly eventPublisherService: EventPublisherService,
+    private readonly biomarkerStore: BiomarkerStore,
   ) {}
 
   async execute(_command: RepublishStaleBatchesCommand) {
@@ -79,9 +87,65 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
       );
     }
 
+    // crash recovery for RECEIVED strays: reconcile the ledger against what
+    // actually landed in the tsdb. status-guarded updates keep this safe against
+    // a concurrent slow ingest — whoever transitions the row first wins, and the
+    // ingest path treats FAILED as retryable.
+    const stranded = await primary.syncBatch.findMany({
+      where: {
+        status: SYNC_BATCH_STATUS.RECEIVED,
+        createdAt: { lt: new Date(now.getTime() - STALE_AFTER_MS) },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: SWEEP_LIMIT,
+    });
+
+    const promoted: typeof stale = [];
+
+    for (const batch of stranded) {
+      const durable = await this.biomarkerStore.countWindow({
+        userId: batch.userId,
+        deviceId: batch.deviceId,
+        from: batch.windowStart,
+        to: batch.windowEnd,
+      });
+
+      if (durable > 0) {
+        // the raw write committed before the crash — resume the lifecycle where
+        // it was cut off and publish in this same sweep (already overdue)
+        const result = await this.appPrismaService.syncBatch.updateMany({
+          where: { id: batch.id, status: SYNC_BATCH_STATUS.RECEIVED },
+          data: {
+            status: SYNC_BATCH_STATUS.RAW_WRITTEN,
+            rawWrittenAt: now,
+            nextPublishAttemptAt: now,
+            sampleCount: durable,
+          },
+        });
+
+        if (result.count === 1) {
+          promoted.push({ ...batch, sampleCount: durable });
+        }
+      } else {
+        // nothing landed — the raw write never committed. FAILED is the honest
+        // state and stays revivable by a clientBatchId retry.
+        await this.appPrismaService.syncBatch.updateMany({
+          where: { id: batch.id, status: SYNC_BATCH_STATUS.RECEIVED },
+          data: { status: SYNC_BATCH_STATUS.FAILED },
+        });
+      }
+    }
+
+    if (stranded.length) {
+      this.logger.warn(
+        { stranded: stranded.length, promoted: promoted.length },
+        'RECEIVED batches past the staleness window — crash gap between tsdb commit and ledger update',
+      );
+    }
+
     let republished = 0;
 
-    for (const batch of stale) {
+    for (const batch of [...promoted, ...stale]) {
       try {
         await this.eventPublisherService.sendEvent({
           id: `device-batch-${batch.id}`,
@@ -126,10 +190,10 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
       }
     }
 
-    if (stale.length) {
+    if (stale.length || promoted.length) {
       this.logger.log(
-        { found: stale.length, republished },
-        'stale RAW_WRITTEN batch sweep',
+        { found: stale.length + promoted.length, republished },
+        'stale batch sweep',
       );
     }
 

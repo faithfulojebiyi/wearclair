@@ -174,6 +174,30 @@ export class BiomarkerStore {
       .sort((a, b) => a.bucket.getTime() - b.bucket.getTime());
   }
 
+  // durable rows for a batch window — the ground truth the sync ledger reconciles
+  // against: a crash between the tsdb commit and the ledger update leaves data
+  // here that the app db doesn't know about yet.
+  async countWindow(args: {
+    userId: string;
+    deviceId: string;
+    from: Date;
+    to: Date;
+  }): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      `SELECT count(*) AS count
+       FROM raw_biomarker
+       WHERE user_id = $1 AND device_id = $2 AND ts >= $3 AND ts <= $4`,
+      [
+        args.userId,
+        args.deviceId,
+        args.from.toISOString(),
+        args.to.toISOString(),
+      ],
+    );
+
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
   async queryDailyStats(args: {
     userId: string;
     metrics: BiomarkerMetric[];

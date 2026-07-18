@@ -89,7 +89,17 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       throw error;
     }
 
-    // first raw write wins the sampleCount; replays (0 inserted) don't downgrade it
+    // sampleCount = durable rows over the persisted window, not this request's
+    // insert count: a retry after a crash-between-tsdb-commit-and-ledger-update
+    // dedupes to 0 inserted while the original samples are already durable —
+    // stamping `inserted` would record a 0-sample batch.
+    const durable = await this.biomarkerStore.countWindow({
+      userId: batch.userId,
+      deviceId: batch.deviceId,
+      from: batch.windowStart,
+      to: batch.windowEnd,
+    });
+
     await this.appPrismaService.syncBatch.updateMany({
       where: {
         id: batch.id,
@@ -103,7 +113,7 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
         // schedule the recovery sweep up front — if the publish below fails,
         // the batch is already queryable as due once the base window elapses
         nextPublishAttemptAt: nextPublishAttemptAt(0),
-        sampleCount: inserted,
+        sampleCount: durable,
       },
     });
 
