@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
+
 import { Command, CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import {
+  ConflictException,
   Logger,
   NotFoundException,
   UnauthorizedException,
@@ -16,6 +19,24 @@ import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 import { nextPublishAttemptAt } from '../publish-backoff';
 import { EventPublisherService } from '../../event-publisher/event-publisher.service';
 import { IngestBatchDto, SyncResultDto } from '../dto/devices.dto';
+
+// order-independent content fingerprint of a request's samples — the server-side
+// truth the idempotency key is checked against, so a reused clientBatchId can
+// never smuggle different content into an already-published batch
+const hashSamples = (
+  samples: { ts: Date; metric: string; value: number }[],
+): string =>
+  createHash('sha256')
+    .update(
+      samples
+        .map(
+          (sample) =>
+            `${sample.ts.toISOString()}|${sample.metric}|${sample.value}`,
+        )
+        .sort()
+        .join('\n'),
+    )
+    .digest('hex');
 
 // THE ingest path: every batch — real device sync or simulate-sync — lands here.
 export class IngestBatchCommand extends Command<SyncResultDto> {
@@ -62,13 +83,15 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
 
     // batch row FIRST — the ledger exists before any side effect, so a crash at
     // any later point leaves a row the recovery cron (or a client retry on the
-    // same clientBatchId) can pick up instead of orphaned raw data.
+    // same clientBatchId) can pick up instead of orphaned raw data. Rejects a
+    // clientBatchId reused with different content BEFORE the raw write.
     const batch = await this.findOrCreateBatch({
       deviceId: device.id,
       userId,
       clientBatchId,
       windowStart,
       windowEnd,
+      contentHash: hashSamples(samples),
     });
 
     // raw firehose write (idempotent via the tsdb dedupe index)
@@ -144,23 +167,34 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
   }
 
   // reuse the row for a retried clientBatchId; otherwise mint one. sampleCount
-  // starts at 0 and is set from the tsdb insert on the first raw write.
+  // starts at 0 and is set from the durable window count on the raw write. A
+  // reused row must carry the SAME content: an already-PUBLISHED/PROCESSED batch
+  // never re-publishes, so silently accepting different samples under its key
+  // would insert raw data no derivation ever picks up.
   private async findOrCreateBatch(data: {
     deviceId: string;
     userId: string;
     clientBatchId?: string;
     windowStart: Date;
     windowEnd: Date;
+    contentHash: string;
   }): Promise<SyncBatch> {
     const { deviceId, userId, clientBatchId, windowStart, windowEnd } = data;
 
     if (!clientBatchId) {
       return this.appPrismaService.syncBatch.create({
-        data: { deviceId, userId, windowStart, windowEnd, sampleCount: 0 },
+        data: {
+          deviceId,
+          userId,
+          windowStart,
+          windowEnd,
+          sampleCount: 0,
+          contentHash: data.contentHash,
+        },
       });
     }
 
-    return this.appPrismaService.syncBatch.upsert({
+    const batch = await this.appPrismaService.syncBatch.upsert({
       where: { deviceId_clientBatchId: { deviceId, clientBatchId } },
       create: {
         deviceId,
@@ -169,10 +203,28 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
         windowStart,
         windowEnd,
         sampleCount: 0,
+        contentHash: data.contentHash,
       },
       // retry of a known batch — leave lifecycle state alone
       update: {},
     });
+
+    if (batch.contentHash && batch.contentHash !== data.contentHash) {
+      throw new ConflictException(
+        'clientBatchId reused with different samples',
+      );
+    }
+
+    // legacy rows predate the hash — stamp on first re-encounter (guarded so a
+    // concurrent request can't overwrite an existing stamp)
+    if (!batch.contentHash) {
+      await this.appPrismaService.syncBatch.updateMany({
+        where: { id: batch.id, contentHash: null },
+        data: { contentHash: data.contentHash },
+      });
+    }
+
+    return batch;
   }
 
   // event id = batch id -> inngest dedupes redeliveries AND recovery republishes.

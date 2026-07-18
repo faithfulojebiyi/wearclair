@@ -126,6 +126,10 @@ model SyncBatch {
   // client-supplied idempotency key — retries of the same client batch reuse the
   // row (and the deterministic event id) instead of minting a duplicate
   clientBatchId   String?     @map("client_batch_id")
+  // server-computed sha256 over the request's samples: a clientBatchId reuse with
+  // DIFFERENT content is rejected (409) instead of silently inserting raw data an
+  // already-published batch will never derive. null only on pre-hash legacy rows.
+  contentHash     String?     @map("content_hash")
   windowStart DateTime        @map("window_start")
   windowEnd   DateTime        @map("window_end")
   sampleCount Int             @map("sample_count")

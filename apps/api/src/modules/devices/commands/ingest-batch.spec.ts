@@ -238,6 +238,68 @@ describe('IngestBatchCommandHandler', () => {
     expect(deps.sendEvent).not.toHaveBeenCalled();
   });
 
+  it('rejects a clientBatchId reused with different samples before any raw write', async () => {
+    // the stored row carries a different content fingerprint — this request is
+    // NOT a retry, and accepting it would insert raw data an already-published
+    // batch never derives
+    deps.upsert.mockImplementation(async () => ({
+      id: 'b1',
+      contentHash: 'a-different-content-hash',
+    }));
+    const handler = makeHandler(deps);
+
+    await expect(
+      handler.execute(
+        // @ts-expect-error — minimal dto
+        new IngestBatchCommand('d1', {
+          samples,
+          clientBatchId: 'client-batch-1',
+        }),
+      ),
+    ).rejects.toThrow('clientBatchId reused with different samples');
+
+    expect(deps.insertBatch).not.toHaveBeenCalled();
+    expect(deps.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it('accepts a retried key with identical content and stamps legacy rows', async () => {
+    // first delivery against a legacy (pre-hash) row: accepted, hash stamped
+    const handler = makeHandler(deps);
+
+    await handler.execute(
+      // @ts-expect-error — minimal dto
+      new IngestBatchCommand('d1', {
+        samples,
+        clientBatchId: 'client-batch-1',
+      }),
+    );
+
+    const stamp = deps.updateMany.mock.calls
+      // @ts-expect-error — mock call args are loosely typed
+      .map((call) => call[0])
+      .find((args) => args?.data?.contentHash !== undefined);
+
+    // guarded stamp: only fills a missing hash, never overwrites one
+    expect(stamp?.where?.contentHash).toBeNull();
+    const stampedHash = stamp?.data?.contentHash as string;
+    expect(typeof stampedHash).toBe('string');
+
+    // true retry: same content against the now-stamped row — no conflict
+    deps.upsert.mockImplementation(async () => ({
+      id: 'b1',
+      contentHash: stampedHash,
+    }));
+    const retry = makeHandler(deps);
+
+    await retry.execute(
+      // @ts-expect-error — minimal dto
+      new IngestBatchCommand('d1', {
+        samples,
+        clientBatchId: 'client-batch-1',
+      }),
+    );
+  });
+
   it('reuses the batch row for a retried clientBatchId via upsert', async () => {
     const handler = makeHandler(deps);
 

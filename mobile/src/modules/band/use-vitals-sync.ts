@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 
 import { devicesControllerSyncDevice } from '@/api/generated/devices/devices';
 import { clearQueued, getQueued, store } from './local-store';
+import { batchKeyFor } from './utils';
 
 const FLUSH_MS = 8000;
 const MAX_BATCH = 500;
@@ -65,9 +66,10 @@ export const useVitalsSync = (
 
       inFlight.current = true;
 
-      // deterministic idempotency key: a retry of the same rows reuses the same
-      // server-side batch (and event id) instead of minting a duplicate
-      const clientBatchId = `batch-${queued[0].ts}-${queued[queued.length - 1].ts}-${queued.length}`;
+      // deterministic content-derived idempotency key: a retry of the same rows
+      // reuses the same server-side batch (and event id); different rows get a
+      // different key instead of colliding into an already-processed batch
+      const clientBatchId = batchKeyFor(queued);
 
       try {
         await devicesControllerSyncDevice(deviceId, {
