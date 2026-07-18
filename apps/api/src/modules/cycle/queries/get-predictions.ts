@@ -8,6 +8,7 @@ import { AppPrismaService } from '@system/database/database.service';
 import {
   DAY_MS,
   DEFAULT_CYCLE_LENGTH,
+  DEFAULT_PERIOD_LENGTH,
   FERTILE_END,
   FERTILE_START,
   OVULATION_DAY,
@@ -100,7 +101,11 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
       };
     }
 
-    // fallback: no period logs yet — use the worker-derived latest insight (28-day)
+    // fallback: no period logs yet — use the worker-derived latest insight
+    // (28-day), PROJECTED FORWARD TO TODAY like the calendar does. The newest
+    // insight can be days old (offline gap); anchoring the math on its date lets
+    // "next period" land in the past while inDays stays positive, and freezes
+    // the displayed phase at the stale one.
     const insight = await this.appPrismaService.dailyInsight.findFirst({
       where: { userId },
       orderBy: { date: 'desc' },
@@ -110,18 +115,41 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
       throw new NotFoundException('no insights yet — sync a device first');
     }
 
-    const anchor = insight.date;
-    const day = insight.cycleDay;
+    const today = startOfDay(new Date());
+    const offset = Math.round(
+      (today.getTime() - startOfDay(insight.date).getTime()) / DAY_MS,
+    );
+    const day =
+      ((((insight.cycleDay - 1 + offset) % DEFAULT_CYCLE_LENGTH) +
+        DEFAULT_CYCLE_LENGTH) %
+        DEFAULT_CYCLE_LENGTH) +
+      1;
+
+    // the worker-derived phase is richer than day-of-cycle mapping (it saw the
+    // temperature shift) — keep it while the insight IS today's; once projected,
+    // the stale phase no longer applies and the day-based mapping takes over
+    const phase =
+      offset === 0
+        ? toCyclePhase(insight.phase)
+        : phaseForDay(
+            {
+              anchor: today,
+              length: DEFAULT_CYCLE_LENGTH,
+              periodLength: DEFAULT_PERIOD_LENGTH,
+              ovulationDay: OVULATION_DAY,
+            },
+            day,
+          );
 
     const fertileStart = nextDateForDay(
-      anchor,
+      today,
       day,
       FERTILE_START,
       DEFAULT_CYCLE_LENGTH,
       false,
     );
     const fertileEnd = nextDateForDay(
-      anchor,
+      today,
       day,
       FERTILE_END,
       DEFAULT_CYCLE_LENGTH,
@@ -131,17 +159,17 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
 
     return {
       cycleDay: day,
-      phase: toCyclePhase(insight.phase),
+      phase,
       ovulation: nextDateForDay(
-        anchor,
+        today,
         day,
         OVULATION_DAY,
         DEFAULT_CYCLE_LENGTH,
         false,
       ),
-      nextPeriod: nextDateForDay(anchor, day, 1, DEFAULT_CYCLE_LENGTH, true),
+      nextPeriod: nextDateForDay(today, day, 1, DEFAULT_CYCLE_LENGTH, true),
       fertileWindow: {
-        start: active ? anchor : fertileStart.date,
+        start: active ? today : fertileStart.date,
         end: fertileEnd.date,
         active,
       },
