@@ -6,6 +6,10 @@ import { clearQueued, getQueued, store } from './local-store';
 
 const FLUSH_MS = 8000;
 const MAX_BATCH = 500;
+// fallback refetch of worker-derived views when the realtime signal doesn't
+// arrive (dev server down, websocket blocked) — late enough for derivation to
+// have finished in the common case
+const DERIVED_FALLBACK_MS = 10_000;
 
 // background sync engine: every FLUSH_MS, drain the local unsynced queue and push it
 // to the REAL ingest endpoint (POST /devices/:id/sync -> hypertable -> Inngest ->
@@ -18,11 +22,28 @@ export const useVitalsSync = (
 ): void => {
   const queryClient = useQueryClient();
   const inFlight = useRef(false);
+  const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!deviceId || !userId) {
       return;
     }
+
+    // derived views (insights, cycle) are computed by the worker AFTER the sync
+    // request returns — an immediate refetch races it and can cache the old
+    // state. The realtime signal (use-sync-updates) refreshes them the moment
+    // derivation lands; this delayed fallback keeps a one-off sync from leaving
+    // them stale forever when realtime is unreachable.
+    const scheduleDerivedRefetch = () => {
+      if (fallbackTimer.current) {
+        clearTimeout(fallbackTimer.current);
+      }
+
+      fallbackTimer.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['insights'] });
+        queryClient.invalidateQueries({ queryKey: ['cycle'] });
+      }, DERIVED_FALLBACK_MS);
+    };
 
     const flush = async () => {
       if (inFlight.current) {
@@ -63,9 +84,11 @@ export const useVitalsSync = (
           Date.now(),
         );
 
-        queryClient.invalidateQueries({ queryKey: ['insights'] });
+        // raw-backed views update synchronously with the ingest write
         queryClient.invalidateQueries({ queryKey: ['biomarkers'] });
         queryClient.invalidateQueries({ queryKey: ['devices'] });
+
+        scheduleDerivedRefetch();
       } catch {
         // keep the rows queued; next tick retries (offline-tolerant)
       } finally {
@@ -75,6 +98,13 @@ export const useVitalsSync = (
 
     const interval = setInterval(flush, FLUSH_MS);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+
+      if (fallbackTimer.current) {
+        clearTimeout(fallbackTimer.current);
+        fallbackTimer.current = null;
+      }
+    };
   }, [deviceId, userId, queryClient]);
 };

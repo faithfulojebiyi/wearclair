@@ -4,6 +4,7 @@ import {
   DeviceListSchema,
   DeviceSchema,
   IngestBatchSchema,
+  RealtimeTokenSchema,
   RegisterDeviceSchema,
   SyncResultSchema,
 } from '../schema';
@@ -20,5 +21,9 @@ export class DeviceListDto extends createZodDto(DeviceListSchema, {
 }) {}
 
 export class SyncResultDto extends createZodDto(SyncResultSchema, {
+  codec: true,
+}) {}
+
+export class RealtimeTokenDto extends createZodDto(RealtimeTokenSchema, {
   codec: true,
 }) {}

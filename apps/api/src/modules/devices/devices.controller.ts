@@ -11,9 +11,11 @@ import {
   DeviceDto,
   DeviceListDto,
   IngestBatchDto,
+  RealtimeTokenDto,
   RegisterDeviceDto,
   SyncResultDto,
 } from './dto/devices.dto';
+import { GetRealtimeTokenQuery } from './queries/get-realtime-token';
 import { ListDevicesQuery } from './queries/list-devices';
 
 @ApiTags('Devices')
@@ -34,6 +36,14 @@ export class DevicesController {
   @Get()
   async listDevices() {
     return this.queryBus.execute(new ListDevicesQuery());
+  }
+
+  // subscription token for the caller's realtime channel — lets the app refresh
+  // derived views exactly when background derivation lands, instead of polling
+  @ZodResponse({ type: RealtimeTokenDto })
+  @Get('realtime-token')
+  async getRealtimeToken() {
+    return this.queryBus.execute(new GetRealtimeTokenQuery());
   }
 
   @ZodResponse({ type: SyncResultDto })

@@ -6,6 +6,7 @@ import { RefreshRollupsCommand } from '@worker/modules/insights/commands/refresh
 import { LoadDailyStatsQuery } from '@worker/modules/insights/queries/load-daily-stats';
 
 import { EVENTS, INNGEST_OPTIONS } from '@system/queues/events.config';
+import { userChannel } from '@system/queues/realtime.config';
 
 // queue consumer for `device/batch.synced` — derive the daily insight NUMBERS from
 // the tsdb rollups. Steps are independently retryable/memoized: a transient tsdb read
@@ -42,6 +43,15 @@ export const deviceBatchSyncedEvent = ({
 
       await step.run('mark-batch-processed', async () =>
         commandBus.execute(new MarkBatchProcessedCommand(event.data.batchId)),
+      );
+
+      // push "derivation finished" to the user's realtime channel — clients hold
+      // their derived-view refetch until this lands (the ingest response returns
+      // BEFORE this function runs, so refetching on sync success races us)
+      await step.realtime.publish(
+        'notify-batch-processed',
+        userChannel({ userId: event.data.userId }).batches,
+        { batchId: event.data.batchId, status: 'PROCESSED' },
       );
 
       return { upserted };

@@ -45,3 +45,14 @@ export const SyncResultSchema = z
     windowEnd: dateToString,
   })
   .meta({ id: 'SyncResult' });
+
+// subscription token for the user's inngest realtime channel: apiBaseUrl is where
+// the client opens the websocket (dev server locally, inngest cloud in prod).
+export const RealtimeTokenSchema = z
+  .object({
+    key: z.string(),
+    apiBaseUrl: z.string(),
+    channel: z.string(),
+    topics: z.array(z.string()),
+  })
+  .meta({ id: 'RealtimeToken' });

@@ -35,6 +35,13 @@ export interface DeviceList {
   devices: Device[];
 }
 
+export interface RealtimeToken {
+  key: string;
+  apiBaseUrl: string;
+  channel: string;
+  topics: string[];
+}
+
 export type BiomarkerMetric = typeof BiomarkerMetric[keyof typeof BiomarkerMetric];
 
 

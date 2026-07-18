@@ -16,6 +16,7 @@ import { useDevices } from '@/modules/band/queries/use-devices';
 import { c } from '@/ui/theme/theme';
 import { getToken, setToken } from '@/modules/auth/token';
 import { useAccountIsolation } from '@/modules/band/use-account-isolation';
+import { useSyncUpdates } from '@/modules/band/use-sync-updates';
 import { useVitalsSync } from '@/modules/band/use-vitals-sync';
 
 export default function TabsLayout() {
@@ -62,6 +63,10 @@ export default function TabsLayout() {
 
   // background vitals sync engine — drains the local queue to the backend app-wide.
   useVitalsSync(devices.data?.devices[0]?.id, session?.user?.id);
+
+  // realtime "derivation finished" push — refreshes insights/cycle/biomarkers the
+  // moment the worker marks a synced batch PROCESSED.
+  useSyncUpdates(Boolean(session) && resolved);
 
   // web: persist the session token so the Orval axios client can send it as a Bearer
   // header (no-op on native, where the cookie header drives auth). If any query

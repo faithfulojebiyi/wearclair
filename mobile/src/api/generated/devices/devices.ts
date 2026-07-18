@@ -9,6 +9,7 @@ import type {
   Device,
   DeviceList,
   IngestBatch,
+  RealtimeToken,
   RegisterDevice,
   SyncResult
 } from '../wearclairAPI.schemas';
@@ -38,6 +39,14 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
     },
       options);
     }
+  export const devicesControllerGetRealtimeToken = (
+
+ options?: SecondParameter<typeof customInstance<RealtimeToken>>,) => {
+      return customInstance<RealtimeToken>(
+      {url: `/devices/realtime-token`, method: 'GET'
+    },
+      options);
+    }
   export const devicesControllerSyncDevice = (
     deviceId: string,
     ingestBatch: BodyType<IngestBatch>,
@@ -59,5 +68,6 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
     }
   export type DevicesControllerRegisterDeviceResult = NonNullable<Awaited<ReturnType<typeof devicesControllerRegisterDevice>>>
 export type DevicesControllerListDevicesResult = NonNullable<Awaited<ReturnType<typeof devicesControllerListDevices>>>
+export type DevicesControllerGetRealtimeTokenResult = NonNullable<Awaited<ReturnType<typeof devicesControllerGetRealtimeToken>>>
 export type DevicesControllerSyncDeviceResult = NonNullable<Awaited<ReturnType<typeof devicesControllerSyncDevice>>>
 export type DevicesControllerSimulateSyncResult = NonNullable<Awaited<ReturnType<typeof devicesControllerSimulateSync>>>
