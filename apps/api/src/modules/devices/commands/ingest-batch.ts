@@ -13,6 +13,7 @@ import { EVENT_KEYS } from '@system/queues/events.config';
 import { SYNC_BATCH_STATUS } from '@system/schema/sync-batch.schema';
 import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 
+import { nextPublishAttemptAt } from '../publish-backoff';
 import { EventPublisherService } from '../../event-publisher/event-publisher.service';
 import { IngestBatchDto, SyncResultDto } from '../dto/devices.dto';
 
@@ -99,6 +100,9 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       data: {
         status: SYNC_BATCH_STATUS.RAW_WRITTEN,
         rawWrittenAt: new Date(),
+        // schedule the recovery sweep up front — if the publish below fails,
+        // the batch is already queryable as due once the base window elapses
+        nextPublishAttemptAt: nextPublishAttemptAt(0),
         sampleCount: inserted,
       },
     });
@@ -187,12 +191,16 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
           status: SYNC_BATCH_STATUS.PUBLISHED,
           publishedAt: new Date(),
           publishAttempts: { increment: 1 },
+          nextPublishAttemptAt: null,
         },
       });
     } catch (error) {
       await this.appPrismaService.syncBatch.updateMany({
         where: { id: batch.id },
-        data: { publishAttempts: { increment: 1 } },
+        data: {
+          publishAttempts: { increment: 1 },
+          nextPublishAttemptAt: nextPublishAttemptAt(batch.publishAttempts + 1),
+        },
       });
 
       this.logger.warn(

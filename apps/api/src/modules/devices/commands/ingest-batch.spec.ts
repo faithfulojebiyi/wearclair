@@ -23,6 +23,7 @@ const persistedRow = {
   windowEnd: new Date('2026-07-01T00:05:00.000Z'),
   sampleCount: 2,
   status: 'RAW_WRITTEN',
+  publishAttempts: 0,
 };
 
 const makeDeps = () => {
@@ -93,12 +94,19 @@ describe('IngestBatchCommandHandler', () => {
       deps.insertBatch.mock.invocationCallOrder[0],
     );
 
-    const statuses = deps.updateMany.mock.calls.map(
+    const updates = deps.updateMany.mock.calls.map(
       // @ts-expect-error — mock call args are loosely typed
-      (call) => call[0]?.data?.status,
+      (call) => call[0]?.data,
     );
-    expect(statuses).toContain('RAW_WRITTEN');
-    expect(statuses).toContain('PUBLISHED');
+    expect(updates.map((data) => data?.status)).toContain('RAW_WRITTEN');
+    expect(updates.map((data) => data?.status)).toContain('PUBLISHED');
+
+    // the raw write schedules the recovery sweep; the publish clears it
+    const rawWritten = updates.find((data) => data?.status === 'RAW_WRITTEN');
+    expect(rawWritten?.nextPublishAttemptAt).toBeInstanceOf(Date);
+
+    const published = updates.find((data) => data?.status === 'PUBLISHED');
+    expect(published?.nextPublishAttemptAt).toBeNull();
   });
 
   it('publishes the PERSISTED window and count, not the request view', async () => {
@@ -169,12 +177,18 @@ describe('IngestBatchCommandHandler', () => {
     expect(statuses).toContain('RAW_WRITTEN');
     expect(statuses).not.toContain('PUBLISHED');
 
-    // the failed attempt is counted so the cron can cap retries
+    // the failed attempt is counted and the next one scheduled with backoff,
+    // so the recovery cron finds the batch as soon as it is due
     const attemptBumps = deps.updateMany.mock.calls.filter(
       // @ts-expect-error — mock call args are loosely typed
       (call) => call[0]?.data?.publishAttempts !== undefined,
     );
     expect(attemptBumps.length).toBe(1);
+
+    // @ts-expect-error — mock call args are loosely typed
+    const nextAttemptAt = attemptBumps[0][0]?.data?.nextPublishAttemptAt;
+    expect(nextAttemptAt).toBeInstanceOf(Date);
+    expect((nextAttemptAt as Date).getTime()).toBeGreaterThan(Date.now());
   });
 
   it('marks the batch FAILED and rethrows when the raw tsdb write fails', async () => {
