@@ -1,4 +1,4 @@
-// demo seed: demo user + device + 60 days of cycle-shaped biomarker history + the
+// demo seed: demo user + device + 4 months of cycle-shaped biomarker history + the
 // derived daily insights. Idempotent — every step is an upsert or a no-op on re-run
 // (the generator is pointwise deterministic and the tsdb dedupe index swallows
 // duplicate samples). Run: bun run seed:demo   (requires: infra up, tsdb:migrate
@@ -21,8 +21,67 @@ const DEMO_EMAIL = 'demo@wearclair.dev';
 const DEMO_PASSWORD = 'wearclair-demo';
 const DEMO_NAME = 'Demo';
 const DEVICE_NAME = 'Clair Band';
-const HISTORY_DAYS = 60;
+const HISTORY_DAYS = 120;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// phase-appropriate cycle-log entries for a cycle day — drives a realistic timeline
+// across every seeded cycle (menstrual flow, the fertile-window signals, luteal PMS).
+// deterministic: same cycle day -> same entries. values mirror the Track catalog.
+const phaseLogsFor = (cycleDay: number): { type: string; value: string }[] => {
+  const logs: { type: string; value: string }[] = [];
+
+  if (cycleDay <= 5) {
+    logs.push({
+      type: 'flow',
+      value: cycleDay <= 2 ? 'Heavy' : cycleDay === 3 ? 'Medium' : 'Light',
+    });
+  }
+
+  if (cycleDay === 1) {
+    logs.push(
+      { type: 'symptom', value: 'Cramps, Fatigue' },
+      { type: 'mood', value: 'Sensitive' },
+    );
+  }
+
+  if (cycleDay === 8) {
+    logs.push(
+      { type: 'mood', value: 'Happy' },
+      { type: 'energy', value: 'Very energetic' },
+    );
+  }
+
+  if (cycleDay === 13) {
+    logs.push({ type: 'cervical_mucus', value: 'Egg white' });
+  }
+
+  if (cycleDay === 14) {
+    logs.push(
+      { type: 'ovulation_test', value: 'Positive' },
+      { type: 'sex', value: 'High drive' },
+    );
+  }
+
+  if (cycleDay === 21) {
+    logs.push({ type: 'diary', value: 'Steady week — sleeping well, calm energy.' });
+  }
+
+  if (cycleDay === 25) {
+    logs.push(
+      { type: 'symptom', value: 'Bloating, Tender breasts' },
+      { type: 'mood', value: 'Irritable' },
+    );
+  }
+
+  if (cycleDay === 27) {
+    logs.push(
+      { type: 'symptom', value: 'Cravings, Acne' },
+      { type: 'mood', value: 'Anxious' },
+    );
+  }
+
+  return logs;
+};
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -61,7 +120,7 @@ try {
       data: { userId, name: DEVICE_NAME },
     }));
 
-  // 3. backfill the raw firehose (~86k rows: 5 metrics x 5-min grid x 60 days)
+  // 3. backfill the raw firehose (~346k rows: 10 metrics x 5-min grid x 120 days)
   const to = new Date();
   const from = new Date(to.getTime() - HISTORY_DAYS * DAY_MS);
   // pin the cycle so the current period starts mid-month (the 18th) — the whole
@@ -156,24 +215,21 @@ try {
     console.log(`health insights upserted: ${drafts.length}`);
   }
 
-  // 6.5 seed cycle logs on the new `date` column: every menstrual day as a logged
-  //     period day (the cycle is anchored mid-month, so these are the runs starting
-  //     on the 18th and the prior cycle ~28 days before) — makes the user period
-  //     authoritative and gives the predictions ≥2 starts to derive the cycle length.
-  //     Plus a few symptom/mood/flow entries for the calendar, timeline, and Track.
-  const cycleLogs: { date: Date; type: string; value: string }[] = insights
-    .filter((i) => i.phase === CyclePhase.MENSTRUAL)
-    .map((i) => ({ date: i.date, type: 'period', value: 'logged' }));
+  // 6.5 seed cycle logs on the `date` column: every menstrual day as a logged period
+  //     day (makes the user period authoritative + gives predictions ≥2 starts to
+  //     derive cycle length), plus phase-appropriate flow/symptom/mood/fertility
+  //     entries across EVERY cycle so the timeline and calendar are populated for all
+  //     ~4 months of history, not just the current one.
+  const cycleLogs: { date: Date; type: string; value: string }[] = [];
 
-  if (insights.length >= 3) {
-    const recent = insights[insights.length - 2].date;
-    const older = insights[insights.length - 3].date;
+  for (const insight of insights) {
+    if (insight.phase === CyclePhase.MENSTRUAL) {
+      cycleLogs.push({ date: insight.date, type: 'period', value: 'logged' });
+    }
 
-    cycleLogs.push(
-      { date: recent, type: 'symptom', value: 'Cramps, Bloating' },
-      { date: recent, type: 'mood', value: 'Calm' },
-      { date: older, type: 'flow', value: 'Medium' },
-    );
+    for (const log of phaseLogsFor(insight.cycleDay)) {
+      cycleLogs.push({ date: insight.date, ...log });
+    }
   }
 
   for (const log of cycleLogs) {

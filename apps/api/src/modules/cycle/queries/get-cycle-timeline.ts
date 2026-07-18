@@ -128,6 +128,7 @@ export class GetCycleTimelineQueryHandler implements IQueryHandler<GetCycleTimel
 
     entries.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-    return { entries: entries.slice(0, 60) };
+    // ~4 months of history: enough to span every seeded cycle, newest first
+    return { entries: entries.slice(0, 200) };
   }
 }
