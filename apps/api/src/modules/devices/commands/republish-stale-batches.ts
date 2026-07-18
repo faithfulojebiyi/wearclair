@@ -89,9 +89,11 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
     const promoted: typeof stale = [];
 
     for (const batch of stranded) {
-      const durable = await this.biomarkerStore.countWindow({
+      // batch-attributed — overlapping older rows must not fake a committed write
+      const durable = await this.biomarkerStore.countBatchRows({
         userId: batch.userId,
         deviceId: batch.deviceId,
+        batchId: batch.id,
         from: batch.windowStart,
         to: batch.windowEnd,
       });

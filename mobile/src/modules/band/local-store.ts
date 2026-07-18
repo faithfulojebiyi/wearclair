@@ -124,17 +124,20 @@ export const clearAllLocalData = (): void => {
 
 /**
  * single-owner store: a different account claiming it wipes the previous owner's
- * data (autoSave propagates to disk). claim only after the persisted snapshot
- * has loaded, or it would overwrite the claim.
+ * data (autoSave propagates to disk) and returns true. claim only after the
+ * persisted snapshot has loaded, or it would overwrite the claim.
  */
-export const claimStore = (userId: string): void => {
+export const claimStore = (userId: string): boolean => {
   const owner = store.getValue('ownerUserId');
+  const wiped = owner !== undefined && owner !== userId;
 
-  if (owner !== undefined && owner !== userId) {
+  if (wiped) {
     clearAllLocalData();
   }
 
   store.setValue('ownerUserId', userId);
+
+  return wiped;
 };
 
 /**

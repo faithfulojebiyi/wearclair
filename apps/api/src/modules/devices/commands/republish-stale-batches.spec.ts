@@ -44,7 +44,7 @@ const makeDeps = (
   );
   const count = mock(async () => options.struggling ?? 0);
   const updateMany = mock(async () => ({ count: 1 }));
-  const countWindow = mock(async () => options.durable ?? 0);
+  const countBatchRows = mock(async () => options.durable ?? 0);
 
   const prisma = {
     $primary: () => ({ syncBatch: { findMany, count } }),
@@ -53,7 +53,7 @@ const makeDeps = (
 
   const sendEvent = mock(async () => ({ ids: ['evt'] }));
 
-  return { prisma, findMany, count, updateMany, sendEvent, countWindow };
+  return { prisma, findMany, count, updateMany, sendEvent, countBatchRows };
 };
 
 const makeHandler = (deps: ReturnType<typeof makeDeps>) =>
@@ -62,7 +62,7 @@ const makeHandler = (deps: ReturnType<typeof makeDeps>) =>
     deps.prisma,
     { sendEvent: deps.sendEvent },
     // @ts-expect-error — minimal fake store for the handler under test
-    { countWindow: deps.countWindow },
+    { countBatchRows: deps.countBatchRows },
   );
 
 describe('RepublishStaleBatchesCommandHandler', () => {

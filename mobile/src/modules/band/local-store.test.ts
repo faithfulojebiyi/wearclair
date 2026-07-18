@@ -70,8 +70,7 @@ describe('local store account isolation', () => {
     claimStore('user-a');
     recordVitals(Date.now(), vitals);
 
-    claimStore('user-a');
-
+    expect(claimStore('user-a')).toBe(false);
     expect(getQueued().length).toBe(1);
     expect(store.getValue('ownerUserId')).toBe('user-a');
   });
@@ -80,8 +79,8 @@ describe('local store account isolation', () => {
     claimStore('user-a');
     recordVitals(Date.now(), vitals);
 
-    claimStore('user-b');
-
+    // wiped=true so callers also drop user-scoped caches
+    expect(claimStore('user-b')).toBe(true);
     expect(getQueued().length).toBe(0);
     expect(store.getRowIds(QUEUE_TABLE).length).toBe(0);
     expect(store.getValue('ownerUserId')).toBe('user-b');

@@ -47,14 +47,14 @@ const makeDeps = () => {
   };
 
   const insertBatch = mock(async () => ({ inserted: 2 }));
-  const countWindow = mock(async () => 2);
+  const countBatchRows = mock(async () => 2);
   const sendEvent = mock(async () => ({ ids: ['evt'] }));
   const als = { ctx: { get: () => 'u1' } };
 
   return {
     prisma,
     insertBatch,
-    countWindow,
+    countBatchRows,
     sendEvent,
     als,
     create,
@@ -68,7 +68,7 @@ const makeHandler = (deps: ReturnType<typeof makeDeps>) =>
   new IngestBatchCommandHandler(
     // @ts-expect-error — minimal fake prisma for the handler under test
     deps.prisma,
-    { insertBatch: deps.insertBatch, countWindow: deps.countWindow },
+    { insertBatch: deps.insertBatch, countBatchRows: deps.countBatchRows },
     { sendEvent: deps.sendEvent },
     deps.als,
   );
@@ -195,7 +195,7 @@ describe('IngestBatchCommandHandler', () => {
   it('stamps the durable window count as sampleCount on a replay that inserts nothing', async () => {
     // crash-retry: dedupe inserts 0 but the original rows are already durable
     deps.insertBatch.mockImplementation(async () => ({ inserted: 0 }));
-    deps.countWindow.mockImplementation(async () => 42);
+    deps.countBatchRows.mockImplementation(async () => 42);
     const handler = makeHandler(deps);
 
     await handler.execute(

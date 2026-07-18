@@ -100,6 +100,7 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
         userId,
         device.id,
         samples,
+        batch.id,
       ));
     } catch (error) {
       await this.appPrismaService.syncBatch.updateMany({
@@ -110,10 +111,11 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       throw error;
     }
 
-    // durable window count, not this request's inserts — a crash-retry dedupes to 0
-    const durable = await this.biomarkerStore.countWindow({
+    // durable batch-attributed count, not this request's inserts — a crash-retry dedupes to 0
+    const durable = await this.biomarkerStore.countBatchRows({
       userId: batch.userId,
       deviceId: batch.deviceId,
+      batchId: batch.id,
       from: batch.windowStart,
       to: batch.windowEnd,
     });

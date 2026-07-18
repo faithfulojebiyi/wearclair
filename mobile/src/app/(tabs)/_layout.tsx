@@ -57,7 +57,10 @@ export default function TabsLayout() {
   const devices = useDevices(Boolean(session));
 
   // account isolation BEFORE the sync engine
-  useAccountIsolation(session?.user?.id, resolved && !isPending);
+  const isolated = useAccountIsolation(
+    session?.user?.id,
+    resolved && !isPending,
+  );
 
   // background vitals sync engine — drains the local queue to the backend app-wide.
   useVitalsSync(devices.data?.devices[0]?.id, session?.user?.id);
@@ -82,7 +85,9 @@ export default function TabsLayout() {
     }
   }, [token, queryClient]);
 
-  if (isPending || !resolved) {
+  // hold rendering until the store claim settled — no window of the previous
+  // owner's local readings or cached server data
+  if (isPending || !resolved || (session && !isolated)) {
     return (
       <View
         style={{

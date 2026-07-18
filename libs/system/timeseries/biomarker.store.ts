@@ -70,6 +70,7 @@ export class BiomarkerStore {
     userId: string,
     deviceId: string,
     samples: RawSample[],
+    batchId?: string,
   ): Promise<{ inserted: number }> {
     return this.pool.withTransaction(async (query) => {
       let inserted = 0;
@@ -78,8 +79,8 @@ export class BiomarkerStore {
         const chunk = samples.slice(offset, offset + INSERT_CHUNK);
 
         const result = await query(
-          `INSERT INTO raw_biomarker (ts, user_id, device_id, metric, value)
-           SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[])
+          `INSERT INTO raw_biomarker (ts, user_id, device_id, metric, value, batch_id)
+           SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[])
            ON CONFLICT DO NOTHING`,
           [
             chunk.map((sample) => sample.ts.toISOString()),
@@ -87,6 +88,7 @@ export class BiomarkerStore {
             chunk.map(() => deviceId),
             chunk.map((sample) => sample.metric),
             chunk.map((sample) => sample.value),
+            chunk.map(() => batchId ?? null),
           ],
         );
 
@@ -174,20 +176,23 @@ export class BiomarkerStore {
       .sort((a, b) => a.bucket.getTime() - b.bucket.getTime());
   }
 
-  // durable rows for a batch window — ground truth the sync ledger reconciles against
-  async countWindow(args: {
+  // durable rows attributed to a batch — overlapping older data must not count
+  async countBatchRows(args: {
     userId: string;
     deviceId: string;
+    batchId: string;
     from: Date;
     to: Date;
   }): Promise<number> {
     const result = await this.pool.query<{ count: string }>(
       `SELECT count(*) AS count
        FROM raw_biomarker
-       WHERE user_id = $1 AND device_id = $2 AND ts >= $3 AND ts <= $4`,
+       WHERE user_id = $1 AND device_id = $2 AND batch_id = $3
+         AND ts >= $4 AND ts <= $5`,
       [
         args.userId,
         args.deviceId,
+        args.batchId,
         args.from.toISOString(),
         args.to.toISOString(),
       ],
