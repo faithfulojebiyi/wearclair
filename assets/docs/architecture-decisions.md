@@ -32,9 +32,9 @@ forcing it into the relational schema.
 
 ### What Timescale is actually doing for me here
 
-Everything below lives in `timeseries/migrations/` as reviewed SQL. Three files, each doing one job:
+Everything below lives in `timeseries/migrations/` as reviewed SQL. Four files, each doing one job:
 
-**Hypertable partitioning** (`0001_raw_biomarker.sql`). `raw_biomarker` is a narrow five-column
+**Hypertable partitioning** (`0001_raw_biomarker.sql`). `raw_biomarker` begins as a narrow five-column
 table (`ts, user_id, device_id, metric, value`) declared as a hypertable with 7-day chunks.
 Narrow on purpose: adding one of the "130 biomarkers" is a new whitelisted `metric` value
 validated by zod app-side, not a DDL change. A 130-column wide table would turn every new
@@ -57,8 +57,10 @@ details I care about:
   so a sync that just landed shows up in bucketed charts immediately, merged with the
   materialized portion, instead of waiting for the 15-minute refresh.
 - When late data lands in an already-materialized bucket (the *normal* case for a BLE device
-  that reconnects after hours offline), Timescale re-materializes the touched buckets on
-  the next refresh. I don't own that invalidation logic, and that's the point.
+  that reconnects after hours offline), the insight worker explicitly refreshes the completed
+  hourly and daily buckets before loading daily statistics. Scheduled policies still maintain
+  the aggregates, but derivation does not wait for the next policy run or read the current
+  incomplete bucket.
 
 **Columnstore compression** (`0003_columnstore.sql`). Raw chunks convert to columnstore after a
 7-day hot window, segmented by `(user_id, metric)` and ordered by `ts DESC`, so each user's
@@ -69,12 +71,22 @@ difference between "keep raw for a year" being a config line and being a budget 
 file says why: rollups outlive raw, and raw's lifespan is a data-budget decision I didn't want
 an engine default making for me.)
 
+**Batch attribution** (`0004_raw_batch_id.sql`). A nullable `batch_id` makes the raw table six
+columns wide and attributes every new raw sample to the relational `SyncBatch` that caused it.
+The column deliberately is not a foreign key across databases. It gives the recovery sweep an
+exact answer to "did this `RECEIVED` batch's raw write commit?" after a process interruption,
+without guessing from an overlapping user/device/time window.
+
 One honest note on tooling: I initially generated this DDL with `@timescaledb/core` and reviewed
 it before committing, and the review caught a real bug: the generator emitted compression
 options with double-quoted values, which Postgres parses as identifiers, not strings. The
 reviewed files in `timeseries/migrations/` are the source of truth precisely because generated
-SQL goes through eyes before it goes near a database. In a health-data context I consider
-generate, review, then commit non-negotiable over any runtime auto-migration.
+SQL goes through eyes before it goes near a database. The migration runner is crash-resumable:
+ordinary DDL and its progress-journal update commit in one transaction; continuous-aggregate DDL
+that PostgreSQL refuses inside a transaction runs in autocommit mode, and a crash replay treats
+the expected duplicate-object error as already applied before journaling progress. In a
+health-data context I consider generate, review, then commit non-negotiable over runtime-generated
+schema changes.
 
 ### What plain Postgres would have cost me
 
@@ -122,10 +134,14 @@ foreign keys) and I chose it anyway. Three reasons:
    "Timescale Cloud vs. self-hosted vs. partitioned vanilla Postgres" is a connection-string
    and DDL decision, not an application rewrite.
 
-The price of no cross-DB FKs is paid with lineage-by-value: every derived `DailyInsight` row
-carries `sourceFrom` / `sourceTo` / `sourceSampleCount` recording exactly which raw window
-produced it (`prisma/app/schema.prisma:97-102`). I get auditability without coupling the two
-stores' lifecycles.
+The price of no cross-DB FKs is paid in two explicit ways. Derived `DailyInsight` rows carry
+`sourceFrom` / `sourceTo` / `sourceSampleCount`, recording which raw window produced them. Ingest
+uses a cross-database state machine rather than pretending it has a distributed transaction:
+it persists `SyncBatch.RECEIVED` first, writes raw rows with that `batch_id`, progresses through
+`RAW_WRITTEN` and `PUBLISHED`, and publishes a deterministic event ID. A reconciliation sweep can
+promote an interrupted `RECEIVED` write from its exactly attributed rows or republish due
+`RAW_WRITTEN` work. That is outbox-like durability specialized for the two-store workflow, not a
+textbook same-database transactional outbox.
 
 ### When I'd reverse this
 
@@ -183,11 +199,13 @@ the same batch as the same event. Belt and suspenders: the derivation is upsert-
 tsdb insert is `ON CONFLICT DO NOTHING`, because dedup-by-id narrows the at-least-once window
 but idempotent handlers are what actually close it.
 
-**Partial retries.** Each pipeline stage is a `step.run()`: load stats, classify-and-upsert,
-mark processed. Steps are memoized: if the app-db write fails after the tsdb read succeeded, the
-retry re-runs only the failed step. In BullMQ, retry granularity is the job; getting step-level
-semantics means splitting one job into a chain of jobs and persisting intermediate state between
-them. That's real architecture, invented per pipeline.
+**Partial retries.** Each numeric pipeline stage is a `step.run()`: refresh rollups, load stats,
+classify-and-upsert, mark processed. Steps are memoized: if the app-db write fails after the tsdb
+read succeeded, the retry re-runs only the failed step. After the durable stages finish, the
+function publishes the authenticated user's `PROCESSED` status over Inngest Realtime. In BullMQ,
+retry granularity is the job; getting step-level semantics means splitting one job into a chain
+of jobs and persisting intermediate state between them. That's real architecture, invented per
+pipeline.
 
 **Failure visibility.** A dedicated consumer on Inngest's built-in `inngest/function.failed`
 event (`apps/worker/src/modules/event-publisher/failed-events.function.ts`) logs every function
@@ -321,8 +339,10 @@ treat that provenance as a product feature, not metadata.
 
 **Debounce + change-gate on AI generation.** Two functions consume one event: numbers are
 derived on every batch (cheap, users see fresh data immediately); narrative cards regenerate at
-most once per user per 10-minute window, and only when the day's numbers actually changed. The
-model call is also wrapped in a deterministic rule-based fallback
+most once per user per 10-minute window, and only when the signature over the latest day plus its
+preceding 14-day baseline changes. The card set is replaced transactionally so keys that are no
+longer generated cannot linger beside current guidance. The model call is also wrapped in a
+deterministic rule-based fallback
 (`libs/feature/cycle-insights/ai-insights.ts`), so an AI outage degrades tone, not availability.
 
 **One schema, every boundary.** Anything crossing HTTP, an event, or an env file derives from a

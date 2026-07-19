@@ -19,8 +19,9 @@ Inngest functions so new code matches what already ships.
 ## General rules and conventions
 
 - Concise implementations. Don't over-abstract. Comments are short, lowercase, and explain the **why**.
-- **NEVER write or generate a migration file.** Only run `bun run prisma:generate` to validate the schema
-  and regenerate the client. The user runs `bun run prisma:migrate:app`.
+- **NEVER write or generate a Prisma migration file.** Only run `bun run prisma:generate` to validate
+  the schema and regenerate the client. The user runs `bun run prisma:migrate:app`. Reviewed
+  TimescaleDB SQL is separate and belongs in `timeseries/migrations/`.
 - Space code for readability: blank line before/after `if`/loops/blocks and before `return`.
 - ESLint-enforced import boundaries (do not violate):
   - `apps/api` cannot import from `apps/worker`, and vice versa.
@@ -137,7 +138,8 @@ export class ThingDto extends createZodDto(ThingSchema, { codec: true }) {}
 - Single client: inject `AppPrismaService` from `@system/database/database.service`. Schema:
   `prisma/app/schema.prisma`. Types: `@orm/app`.
 - Read replicas are transparent (active only with `APP_DATABASE_REPLICA_URL`) — no API change.
-- **Never write migration files.** Run `bun run prisma:generate`; the user runs migrations.
+- **Never write Prisma migration files.** Run `bun run prisma:generate`; the user runs them.
+  TimescaleDB migrations are reviewed SQL under `timeseries/migrations/`.
 
 ## ALS (api only)
 
@@ -188,6 +190,13 @@ them in via `deps`. Dispatching to CQRS handlers from inside a function is the i
 business logic lives in the handlers, never inline in the function. Never use ALS inside an Inngest
 function (no HTTP request scope); identity travels in the typed event data.
 
+Device sync durability depends on the existing state machine. Persist `SyncBatch.RECEIVED` before
+the time-series write, attribute raw rows with `batch_id`, then advance through `RAW_WRITTEN`,
+`PUBLISHED`, and worker-owned `PROCESSED`. Preserve the deterministic event ID and recovery sweep;
+do not replace these transitions with an untracked cross-database write. The worker refreshes
+completed continuous-aggregate buckets before reading daily stats and publishes realtime completion
+only after processing.
+
 ## Build & verify
 
 ```bash
@@ -196,7 +205,7 @@ bun run build                      # nest build api && nest build worker — ful
 bun run lint                       # eslint --fix
 bun run start:dev:api              # api in watch mode
 bun run start:dev:worker           # worker in watch mode
-bun test apps libs                 # bun's test runner
+bun test apps libs timeseries      # bun's test runner
 ```
 
 After adding a module, confirm: (1) handlers are in the module's `providers`; (2) the module is

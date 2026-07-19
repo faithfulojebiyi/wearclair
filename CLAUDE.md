@@ -22,7 +22,7 @@ wearclair/
 ├── libs/
 │   ├── system/     # core infra: als, cache, cqrs, database, env, interceptors, logger, queues
 │   ├── providers/  # external integrations (resend, s3)
-│   └── feature/    # business-domain services (empty for now)
+│   └── feature/    # pure biomarker simulation and cycle-insight domain logic
 ├── prisma/app/     # database schema (prisma/app/schema.prisma)
 └── orm/app/        # generated Prisma client (gitignored) — imported as @orm/app
 ```
@@ -39,6 +39,8 @@ wearclair/
 bun install
 bun run prisma:generate         # regenerate the Prisma client (@orm/app) — never write a migration file
 bun run prisma:migrate:app      # YOU run migrations (needs prisma/.env with APP_DATABASE_URL)
+bun run tsdb:migrate            # apply reviewed TimescaleDB SQL (loads apps/api/.env)
+bun run tsdb:reset              # reset/reapply TimescaleDB migrations in local development only
 bun run build                   # nest build api && nest build worker (full typecheck — use to verify)
 bun run start:dev:api           # api in watch mode (port 3310)
 bun run start:dev:worker        # worker in watch mode (port 3311)
@@ -105,8 +107,9 @@ Null sentinels (plain `null` does not satisfy Prisma's typed-JSON write signatur
   `prisma/app/schema.prisma`. Generated types: `@orm/app`.
 - Read replicas are wired transparently via `@prisma/extension-read-replicas` (active only when
   `APP_DATABASE_REPLICA_URL` is set) — no API change for handlers.
-- **Never write or generate a migration file.** Run `bun run prisma:generate` to validate the schema; the
-  user runs `bun run prisma:migrate:app`.
+- **Never write or generate a Prisma migration file.** Run `bun run prisma:generate` to validate the
+  schema; the user runs `bun run prisma:migrate:app`. TimescaleDB is separate: reviewed SQL belongs in
+  `timeseries/migrations/` and is applied with `bun run tsdb:migrate`.
 
 ## Event-Driven Communication (Inngest)
 
@@ -128,6 +131,15 @@ Locally, `INNGEST_DEV=1` (in each app's `.env`) runs the SDK against `bun run in
 `inngest.yaml` registers both app endpoints (`http://localhost:3310|3311/api/inngest`) with the dev
 server (`no-discovery: true`). Copy `apps/<app>/.env.example` → `apps/<app>/.env` to start.
 
+### Sync durability and completion
+
+Device ingest is a deliberate cross-database state machine: persist `SyncBatch.RECEIVED`, write
+Timescale rows attributed with `batch_id`, advance through `RAW_WRITTEN` and `PUBLISHED`, then let the
+worker mark `PROCESSED`. Publish with the deterministic `device-batch-<batchId>` event ID. The API
+recovery sweep reconciles interrupted `RECEIVED` writes and republishes due `RAW_WRITTEN` batches, so
+do not bypass the state transitions or batch attribution. The worker refreshes completed continuous-
+aggregate buckets before daily reads and emits the user's realtime completion only after processing.
+
 ## Environment
 
 - Node.js 24, bun (>=1.3.14) as the package manager + test runner, TypeScript with `module: preserve` +
@@ -137,7 +149,8 @@ server (`no-discovery: true`). Copy `apps/<app>/.env.example` → `apps/<app>/.e
   copy each — a second copy breaks fastify plugin/inngest types), and `@mastra/*` pinned exact (the
   `libs/providers/mastra` Fastify adapter is written against those versions).
 - Postgres (`APP_DATABASE_URL`), optional read replica (`APP_DATABASE_REPLICA_URL`), Valkey/Redis cache
-  (`APP_REDIS_URL`). Each app reads its own `apps/<app>/.env`; migrations read `prisma/.env`.
+  (`APP_REDIS_URL`). Each app reads its own `apps/<app>/.env`; Prisma CLI commands read `prisma/.env`,
+  while TimescaleDB scripts load `apps/api/.env`.
 - Default ports: api `3310`, worker `3311`, dashboard `3010`, Inngest dev UI `8288`. (Offset from the
   carbonme-hq sibling, which uses `3300`/`3301`/`3000`, so both can run at once.)
 - **No OpenTelemetry / Sentry** — observability is plain pino logging (pretty in dev, JSON in prod).

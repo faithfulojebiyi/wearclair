@@ -42,8 +42,9 @@
     "prisma:status:app": "bunx prisma migrate status --schema prisma/app/schema.prisma",
     "prisma:deploy": "bunx prisma migrate deploy --schema prisma/app/schema.prisma",
     "db:reset:mastra": "bun --env-file=apps/api/.env prisma/reset-mastra.ts",
-    "db:reset:all": "bun run prisma:reset:app && bun run db:reset:mastra",
+    "db:reset:all": "bun run prisma:reset:app && bun run db:reset:mastra && bun run tsdb:reset",
     "tsdb:migrate": "bun --env-file=apps/api/.env timeseries/migrate.ts",
+    "tsdb:reset": "bun --env-file=apps/api/.env timeseries/reset.ts && bun run tsdb:migrate",
     "tsdb:generate": "bun timeseries/generate.ts",
     "seed:demo": "bun --env-file=apps/api/.env timeseries/seed-demo.ts"
   },

@@ -1,56 +1,66 @@
-# Welcome to your Expo app 👋
+# Wearclair mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The consumer app is an Expo 57 / React Native application using Expo Router, Better Auth,
+TanStack Query, and TinyBase. It shows biomarker readings, cycle and readiness derivations,
+health-insight cards, and the local band-sync simulator.
 
-## Get started
+## Run locally
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Install from the repository root, then start Expo:
 
 ```bash
-npm run reset-project
+bun --cwd mobile install
+bun --cwd mobile start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Platform-specific commands are also available:
 
-### Other setup steps
+```bash
+bun --cwd mobile run ios
+bun --cwd mobile run android
+bun --cwd mobile run web
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+The API defaults to `http://localhost:3310`. A physical device cannot resolve the development
+machine through `localhost`, so create `mobile/.env` and use the machine's LAN address:
 
-## Learn more
+```dotenv
+EXPO_PUBLIC_API_URL=http://192.168.1.20:3310
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+The backend listens on `0.0.0.0`; the phone and development machine must be on the same network.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Data and sync model
 
-## Join the community
+- TinyBase stores the latest readings and pending samples locally first. Native builds persist it
+  through Expo SQLite; web uses the browser-backed adapter.
+- Foreground and background flushes send deterministic batches through the authenticated device
+  sync endpoint. A content-derived key makes retrying the same local samples idempotent.
+- Successful sync immediately refreshes device and raw-backed biomarker queries.
+- Worker-derived insight and cycle queries refresh when the signed-in user's Inngest Realtime
+  channel reports that the batch is `PROCESSED`. A 10-second delayed invalidation is the fallback
+  when realtime is unavailable.
+- Local stores are owned by the authenticated account. An account change gates rendering while
+  TinyBase and the TanStack Query cache are cleared, preventing cross-account data display.
 
-Join our community of developers creating universal apps.
+## Generated API client
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+The generated OpenAPI client lives in `src/api/generated/`. Start the API on the configured URL,
+then regenerate it with:
+
+```bash
+bun --cwd mobile run gen:api
+```
+
+Do not hand-edit generated client files.
+
+## Checks
+
+```bash
+bun test mobile
+bunx tsc -p mobile/tsconfig.json --noEmit
+bun --cwd mobile run lint
+```
+
+Expo changes quickly. Before implementation work, consult the exact Expo 57 documentation as
+required by `mobile/AGENTS.md`.
