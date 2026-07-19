@@ -10,6 +10,16 @@ const MAX_BATCH = 500;
 // fallback refetch of derived views when the realtime signal doesn't arrive
 const DERIVED_FALLBACK_MS = 10_000;
 
+// device-local IANA zone — the server stamps local_day on raw rows with it and
+// falls back to UTC when omitted. read per flush so zone changes are picked up.
+const deviceTimezone = (): string | undefined => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 // background sync engine: every FLUSH_MS, drain the local unsynced queue and push it
 // to the REAL ingest endpoint (POST /devices/:id/sync -> hypertable -> Inngest ->
 // worker insights). On success the rows are removed locally and the server-derived
@@ -65,8 +75,11 @@ export const useVitalsSync = (
       const clientBatchId = batchKeyFor(queued);
 
       try {
+        const timezone = deviceTimezone();
+
         await devicesControllerSyncDevice(deviceId, {
           clientBatchId,
+          ...(timezone ? { timezone } : {}),
           samples: queued.map((sample) => ({
             ts: new Date(sample.ts).toISOString(),
             metric: sample.metric,
