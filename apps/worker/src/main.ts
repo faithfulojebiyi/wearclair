@@ -4,6 +4,8 @@ import { serve } from 'inngest/fastify';
 import { Logger } from 'nestjs-pino';
 import { v7 as uuidv7 } from 'uuid';
 
+import { parseTrustProxy } from '@system/env/trust-proxy';
+
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
@@ -30,6 +32,8 @@ async function bootstrap() {
     new FastifyAdapter({
       requestIdHeader: 'x-request-id',
       genReqId: () => uuidv7(),
+      // real client IPs in logs when deployed behind the LB
+      trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
     }),
     { rawBody: true, bufferLogs: true },
   );

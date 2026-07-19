@@ -3,6 +3,7 @@ export interface WorkerEnvInterface {
   NODE_ENV: string;
   PORT: number;
   API_PREFIX?: string;
+  TRUST_PROXY?: string;
 
   // database
   APP_DATABASE_URL: string;

@@ -22,10 +22,8 @@ export class TsdbPool implements OnModuleDestroy {
       connectionString: process.env.TSDB_DATABASE_URL,
       max: 10,
       options: '-c timezone=UTC',
-      ssl:
-        process.env.NODE_ENV !== 'development'
-          ? { rejectUnauthorized: false }
-          : undefined,
+      // verified TLS outside development — the hosted cert is publicly trusted
+      ssl: process.env.NODE_ENV !== 'development' ? true : undefined,
     });
 
     // pg emits 'error' when an idle client's backend dies — unhandled it kills the process

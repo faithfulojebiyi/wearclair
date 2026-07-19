@@ -7,6 +7,7 @@ import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { v7 as uuidv7 } from 'uuid';
 
 import { auth } from '@system/auth/auth';
+import { parseTrustProxy } from '@system/env/trust-proxy';
 
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
@@ -39,6 +40,9 @@ async function bootstrap() {
       genReqId: () => uuidv7(),
       // device batch ingest: 20k samples ≈ 1.5 MB JSON — fastify's 1 MB default is too low
       bodyLimit: 10 * 1024 * 1024,
+      // behind the LB request.ip must come from x-forwarded-for, or every client
+      // shares the proxy's IP (one abuser rate-limits everyone)
+      trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
     }),
     { rawBody: true, bufferLogs: true },
   );

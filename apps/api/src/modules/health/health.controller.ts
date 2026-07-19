@@ -9,8 +9,17 @@ import { Public } from '@system/auth/auth.decorators';
 import { AppPrismaService } from '@system/database/database.service';
 import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 
+// unauthenticated endpoint that pings both databases — memoize briefly so
+// hammering it can't multiply db load
+const HEALTH_CACHE_MS = 5000;
+
 @Controller('health')
 export class HealthController {
+  private lastCheck: {
+    at: number;
+    result: ReturnType<HealthCheckService['check']>;
+  } | null = null;
+
   constructor(
     private readonly health: HealthCheckService,
     private readonly healthIndicator: HealthIndicatorService,
@@ -22,6 +31,20 @@ export class HealthController {
   @Get()
   @HealthCheck()
   check() {
+    const now = Date.now();
+
+    if (this.lastCheck && now - this.lastCheck.at < HEALTH_CACHE_MS) {
+      return this.lastCheck.result;
+    }
+
+    const result = this.runChecks();
+
+    this.lastCheck = { at: now, result };
+
+    return result;
+  }
+
+  private runChecks() {
     return this.health.check([
       async () => {
         const indicator = this.healthIndicator.check('tsdb');

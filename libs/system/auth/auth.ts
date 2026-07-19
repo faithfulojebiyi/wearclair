@@ -11,18 +11,40 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { bearer } from 'better-auth/plugins';
+import { Keyv } from 'keyv';
 
 import { PrismaClient } from '@orm/app';
+
+import { Logger } from '@nestjs/common';
+
+import KeyvValkey from '@keyv/valkey';
 
 // dedicated client for the auth layer (shares the same Postgres via the pg adapter).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
     connectionString: process.env.APP_DATABASE_URL,
-    ssl:
-      process.env.NODE_ENV !== 'development'
-        ? { rejectUnauthorized: false }
-        : undefined,
+    // verified TLS outside development — the hosted cert is publicly trusted
+    ssl: process.env.NODE_ENV !== 'development' ? true : undefined,
   }),
+});
+
+/**
+ * valkey-backed secondary storage: session reads and rate-limit counters come
+ * from cache and are shared across replicas. sessions also persist in postgres
+ * (storeSessionInDatabase) so cache loss cannot silently drop them.
+ */
+const logger = new Logger('BetterAuth');
+const redisUrl = process.env.APP_REDIS_URL;
+const authCache = redisUrl
+  ? new Keyv({
+      store: new KeyvValkey({ uri: redisUrl }),
+      namespace: 'better-auth',
+    })
+  : undefined;
+
+// keyv re-emits valkey connection errors — unhandled they kill the process
+authCache?.on('error', (error) => {
+  logger.error({ err: error }, 'auth secondary storage errored');
 });
 
 // CSRF: state-changing POSTs require a trusted Origin. List the app/frontend origins
@@ -37,12 +59,28 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL, // canonical origin (removes the "Base URL not set" warning)
   ...(trustedOrigins.length ? { trustedOrigins } : {}),
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
+  ...(authCache
+    ? {
+        secondaryStorage: {
+          get: async (key: string) =>
+            (await authCache.get<string>(key)) ?? null,
+          set: async (key: string, value: string, ttl?: number) => {
+            await authCache.set(key, value, ttl ? ttl * 1000 : undefined);
+          },
+          delete: async (key: string) => {
+            await authCache.delete(key);
+          },
+        },
+        // valkey is a cache, not the source of truth for sessions
+        session: { storeSessionInDatabase: true },
+      }
+    : {}),
   emailAndPassword: { enabled: true },
-  // brute-force protection on the auth surface. In-memory counters — fine for a
-  // single api instance; move to redis-backed storage when the api scales out
-  // (tracked in docs/followups). Only active outside development.
+  // brute-force protection on the auth surface. counters live in valkey when
+  // configured, so limits hold across replicas. Only active outside development.
   rateLimit: {
     enabled: process.env.NODE_ENV !== 'development',
+    ...(authCache ? { storage: 'secondary-storage' as const } : {}),
     window: 60,
     max: 60,
     customRules: {

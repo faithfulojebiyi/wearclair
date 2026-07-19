@@ -176,9 +176,15 @@ export class MastraThrottleGuard implements CanActivate, OnModuleDestroy {
    * X-Forwarded-For spoofing attacks.
    */
   private getClientId(request: FastifyRequest): string {
-    const user = (request as FastifyRequest & { user?: { id?: string } }).user;
-    if (user?.id) {
-      return `user:${user.id}`;
+    const authed = request as FastifyRequest & {
+      user?: { id?: string };
+      // wearclair's SessionGuard attaches the Better Auth session here
+      session?: { user?: { id?: string } };
+    };
+
+    const userId = authed.user?.id ?? authed.session?.user?.id;
+    if (userId) {
+      return `user:${userId}`;
     }
 
     const ip = request.ip || request.socket?.remoteAddress || 'unknown';

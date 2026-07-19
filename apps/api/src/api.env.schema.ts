@@ -1,6 +1,7 @@
 import * as Joi from 'joi';
 
 import {
+  NODE_ENV_SCHEMA,
   OPTIONAL_STRING_IN_DEV_SCHEMA,
   REQUIRED_STRING_SCHEMA,
 } from '@system/env/env.schema';
@@ -11,11 +12,11 @@ export const envSchema: Joi.ObjectSchema<ApiEnvInterface> = Joi.object({
   APP_ENV: Joi.string()
     .valid('development', 'staging', 'production')
     .required(),
-  NODE_ENV: Joi.string()
-    .valid('development', 'staging', 'production')
-    .required(),
+  NODE_ENV: NODE_ENV_SCHEMA,
   PORT: Joi.number().required(),
   API_PREFIX: OPTIONAL_STRING_IN_DEV_SCHEMA,
+  // behind the LB: 'true', hop count, or CIDR list — enables real client IPs
+  TRUST_PROXY: Joi.string().optional(),
 
   // database
   APP_DATABASE_URL: REQUIRED_STRING_SCHEMA,

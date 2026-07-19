@@ -15,10 +15,8 @@ export class AppPrismaProvider extends AppPrismaClient implements OnModuleInit {
     super({
       adapter: new PrismaPg({
         connectionString: process.env.APP_DATABASE_URL,
-        ssl:
-          process.env.NODE_ENV !== 'development'
-            ? { rejectUnauthorized: false }
-            : undefined,
+        // verified TLS outside development — the hosted cert is publicly trusted
+        ssl: process.env.NODE_ENV !== 'development' ? true : undefined,
       }),
       omit: {},
       errorFormat: 'minimal',
@@ -49,10 +47,7 @@ export class AppPrismaProvider extends AppPrismaClient implements OnModuleInit {
       adapter: new PrismaPg({
         connectionString:
           process.env.APP_DATABASE_REPLICA_URL || process.env.APP_DATABASE_URL,
-        ssl:
-          process.env.NODE_ENV !== 'development'
-            ? { rejectUnauthorized: false }
-            : undefined,
+        ssl: process.env.NODE_ENV !== 'development' ? true : undefined,
       }),
       omit: {},
       errorFormat: 'minimal',

@@ -6,6 +6,21 @@ export const REQUIRED_NUMBER_SCHEMA = Joi.number().required();
 
 export const REQUIRED_BOOLEAN_SCHEMA = Joi.boolean().required();
 
+/**
+ * NODE_ENV drives library security switches (secure cookies, DB TLS, auth rate
+ * limiting) while validation strictness keys off APP_ENV. A development
+ * NODE_ENV in a deployed APP_ENV would ship every switch disabled — forbid the
+ * split. staging/production may mix (staging commonly runs NODE_ENV=production).
+ */
+export const NODE_ENV_SCHEMA = Joi.string()
+  .valid('development', 'staging', 'production')
+  .when('APP_ENV', {
+    is: Joi.valid('development'),
+    then: Joi.valid('development'),
+    otherwise: Joi.invalid('development'),
+  })
+  .required();
+
 // Top-level `Joi.when` — not `Joi.string().when`. The base string schema rejects
 // `KEY=` before the conditional branch runs; dev optional keys must accept empty.
 export const OPTIONAL_STRING_IN_DEV_SCHEMA = Joi.when('APP_ENV', {
