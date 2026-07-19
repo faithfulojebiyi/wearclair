@@ -74,7 +74,7 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       throw new NotFoundException('device not found');
     }
 
-    const { samples, clientBatchId } = command.dto;
+    const { samples, clientBatchId, timezone } = command.dto;
     const times = samples.map((sample) => sample.ts.getTime());
     const windowStart = new Date(Math.min(...times));
     const windowEnd = new Date(Math.max(...times));
@@ -101,6 +101,7 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
         device.id,
         samples,
         batch.id,
+        timezone,
       ));
     } catch (error) {
       await this.appPrismaService.syncBatch.updateMany({
@@ -140,6 +141,14 @@ export class IngestBatchCommandHandler implements ICommandHandler<IngestBatchCom
       await this.appPrismaService.device.update({
         where: { id: device.id },
         data: { lastSyncedAt: windowEnd },
+      });
+    }
+
+    // the device owns local time — keep the profile tz fresh for "today" reads
+    if (timezone) {
+      await this.appPrismaService.user.updateMany({
+        where: { id: userId, NOT: { timezone } },
+        data: { timezone },
       });
     }
 

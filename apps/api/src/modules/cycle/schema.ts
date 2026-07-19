@@ -4,6 +4,16 @@ import { CyclePhaseSchema } from '@feature/cycle-insights/phase';
 
 import { dateRangeWithin, dateToString } from '@system/schema/utils';
 
+/**
+ * transitional day input: the contract is a plain local calendar day, but
+ * legacy mobile builds still send ISO datetimes — take their UTC day part
+ * (the pre-local-day behavior) until the client migrates.
+ */
+const localDaySchema = z.union([
+  z.iso.date(),
+  z.iso.datetime().transform((value) => value.slice(0, 10)),
+]);
+
 // the allowed log categories live HERE (zod), not in a db enum — adding one is a
 // one-line change, no migration. Input is validated against this; stored as a string.
 // mirrors the mobile Track catalog (mobile/src/modules/cycle/catalog.ts).
@@ -33,8 +43,9 @@ export const CreateCycleLogSchema = z
     type: cycleLogTypeSchema,
     value: z.string().min(1).max(500),
     note: z.string().max(500).optional(),
-    // the calendar day the entry belongs to; defaults to today when omitted
-    date: z.iso.datetime().optional(),
+    // plain local calendar day (client-computed); defaults to the user's
+    // local today (User.timezone) when omitted
+    date: localDaySchema.optional(),
   })
   .meta({ id: 'CreateCycleLog' });
 
@@ -44,7 +55,7 @@ export const UpsertCycleLogSchema = z
     type: cycleLogTypeSchema,
     value: z.string().max(500),
     note: z.string().max(500).optional(),
-    date: z.iso.datetime(),
+    date: localDaySchema,
   })
   .meta({ id: 'UpsertCycleLog' });
 
@@ -105,8 +116,8 @@ export const CycleCalendarSchema = z
 // not the user's data — bounds the work.
 export const GetCycleCalendarQuerySchema = z
   .object({
-    from: z.iso.datetime(),
-    to: z.iso.datetime(),
+    from: localDaySchema,
+    to: localDaySchema,
   })
   .superRefine(dateRangeWithin(400))
   .meta({ id: 'GetCycleCalendarQuery' });
@@ -129,7 +140,7 @@ export const CycleTimelineSchema = z
 // a single day's derived state + all its logs — powers the Track screen prefill and
 // the calendar's selected-day card.
 export const GetCycleDayQuerySchema = z
-  .object({ date: z.iso.datetime() })
+  .object({ date: localDaySchema })
   .meta({ id: 'GetCycleDayQuery' });
 
 export const CycleDaySummarySchema = z
@@ -153,9 +164,9 @@ export const CycleDaySummarySchema = z
  */
 export const SetPeriodSchema = z
   .object({
-    from: z.iso.datetime(),
-    to: z.iso.datetime(),
-    dates: z.array(z.iso.datetime()).max(400),
+    from: localDaySchema,
+    to: localDaySchema,
+    dates: z.array(localDaySchema).max(400),
   })
   .superRefine(dateRangeWithin(400))
   .superRefine((value, ctx) => {

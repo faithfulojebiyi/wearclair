@@ -22,6 +22,18 @@ export const PERIOD_EXCLUDED = 'excluded';
 
 export const dayKey = (date: Date) => date.toISOString().slice(0, 10);
 
+// today's calendar day in the user's timezone ('en-CA' renders YYYY-MM-DD);
+// missing/invalid zones fall back to UTC
+export const todayKeyIn = (timezone: string | null | undefined): string => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone ?? 'UTC',
+    }).format(new Date());
+  } catch {
+    return dayKey(new Date());
+  }
+};
+
 // midnight-UTC start of the given date (matches how @db.Date rows come back)
 export const startOfDay = (date: Date) => new Date(dayKey(date));
 

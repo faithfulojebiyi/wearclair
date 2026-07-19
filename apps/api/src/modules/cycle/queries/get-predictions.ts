@@ -17,6 +17,7 @@ import {
   phaseForDay,
   projectCycleDay,
   startOfDay,
+  todayKeyIn,
 } from '../cycle-model';
 import { CyclePredictionsDto } from '../dto/cycle.dto';
 
@@ -69,12 +70,19 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
       select: { date: true },
     });
 
+    const user = await this.appPrismaService.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+
+    // predictions anchor on the user's local today, not the server's UTC day
+    const today = new Date(todayKeyIn(user?.timezone));
+
     const model = buildPeriodModel(periodLogs.map((l) => l.date));
 
     // user period is authoritative — anchor everything on the derived model so an
     // edit-period save immediately shifts every prediction.
     if (model) {
-      const today = startOfDay(new Date());
       const cycleDay = projectCycleDay(model, today);
       const length = model.length;
       const ovDay = model.ovulationDay;
@@ -116,7 +124,6 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
       throw new NotFoundException('no insights yet — sync a device first');
     }
 
-    const today = startOfDay(new Date());
     const offset = Math.round(
       (today.getTime() - startOfDay(insight.date).getTime()) / DAY_MS,
     );

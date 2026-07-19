@@ -62,15 +62,19 @@ interface SeriesRow {
 export class BiomarkerStore {
   constructor(private readonly pool: TsdbPool) {}
 
-  // chunked batch insert inside ONE transaction: either every sample lands or none
-  // do, so a FAILED batch truly means nothing persisted and a retry re-counts the
-  // full batch. the unique index + deterministic generator make re-ingest of any
-  // window a no-op (ON CONFLICT DO NOTHING).
+  /**
+   * chunked batch insert inside ONE transaction: either every sample lands or
+   * none do, so a FAILED batch truly means nothing persisted and a retry
+   * re-counts the full batch. the unique index + deterministic generator make
+   * re-ingest of any window a no-op (ON CONFLICT DO NOTHING). local_day is the
+   * device-local calendar day, stamped from the batch's IANA timezone.
+   */
   async insertBatch(
     userId: string,
     deviceId: string,
     samples: RawSample[],
     batchId?: string,
+    timezone = 'UTC',
   ): Promise<{ inserted: number }> {
     return this.pool.withTransaction(async (query) => {
       let inserted = 0;
@@ -79,8 +83,10 @@ export class BiomarkerStore {
         const chunk = samples.slice(offset, offset + INSERT_CHUNK);
 
         const result = await query(
-          `INSERT INTO raw_biomarker (ts, user_id, device_id, metric, value, batch_id)
-           SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[])
+          `INSERT INTO raw_biomarker (ts, user_id, device_id, metric, value, batch_id, local_day)
+           SELECT u.ts, u.user_id, u.device_id, u.metric, u.value, u.batch_id, (u.ts AT TIME ZONE $7)::date
+           FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[])
+             AS u(ts, user_id, device_id, metric, value, batch_id)
            ON CONFLICT DO NOTHING`,
           [
             chunk.map((sample) => sample.ts.toISOString()),
@@ -89,6 +95,7 @@ export class BiomarkerStore {
             chunk.map((sample) => sample.metric),
             chunk.map((sample) => sample.value),
             chunk.map(() => batchId ?? null),
+            timezone,
           ],
         );
 
@@ -201,19 +208,33 @@ export class BiomarkerStore {
     return Number(result.rows[0]?.count ?? 0);
   }
 
+  /**
+   * per-(local_day, metric) stats straight off the raw hypertable — a cagg
+   * must bucket on ts (UTC), so device-local days group raw rows instead,
+   * riding the (user_id, metric, local_day) index. day::text avoids the pg
+   * date parser's local-midnight Dates; days stay UTC-midnight like before.
+   */
   async queryDailyStats(args: {
     userId: string;
     metrics: BiomarkerMetric[];
     from: Date;
     to: Date;
   }): Promise<DailyStat[]> {
-    const result = await this.pool.query<
-      SeriesRow & { metric: BiomarkerMetric }
-    >(
-      `SELECT bucket, metric, avg_value, min_value, max_value, sample_count::int AS sample_count
-       FROM biomarker_1d
-       WHERE user_id = $1 AND metric = ANY($2) AND bucket >= $3 AND bucket < $4
-       ORDER BY bucket, metric`,
+    const result = await this.pool.query<{
+      day: string;
+      metric: BiomarkerMetric;
+      avg_value: number;
+      min_value: number;
+      max_value: number;
+      sample_count: string;
+    }>(
+      `SELECT local_day::text AS day, metric,
+              avg(value) AS avg_value, min(value) AS min_value, max(value) AS max_value,
+              count(*)::int AS sample_count
+       FROM raw_biomarker
+       WHERE user_id = $1 AND metric = ANY($2) AND local_day >= $3::date AND local_day < $4::date
+       GROUP BY local_day, metric
+       ORDER BY local_day, metric`,
       [
         args.userId,
         args.metrics,
@@ -223,7 +244,7 @@ export class BiomarkerStore {
     );
 
     return result.rows.map((row) => ({
-      day: row.bucket,
+      day: new Date(`${row.day}T00:00:00.000Z`),
       metric: row.metric,
       avg: row.avg_value,
       min: row.min_value,

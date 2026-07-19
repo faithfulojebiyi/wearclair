@@ -26,14 +26,31 @@ export const DeviceListSchema = z
   })
   .meta({ id: 'DeviceList' });
 
+const isIanaTimezone = (tz: string): boolean => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // the real ingest contract — what a BLE-synced device batch looks like on the wire.
 // 20k samples ≈ a full day of 5 metrics at 5-minute resolution, with headroom.
 // clientBatchId: client-generated idempotency key — retries of the same batch reuse
 // the SyncBatch row and event id instead of minting duplicates.
+// timezone: device-local IANA zone — stamps local_day on raw rows and refreshes
+// User.timezone; omitted (old clients) falls back to UTC.
 export const IngestBatchSchema = z
   .object({
     samples: z.array(biomarkerSampleSchema).min(1).max(20000),
     clientBatchId: z.string().min(8).max(128).optional(),
+    timezone: z
+      .string()
+      .max(64)
+      .refine(isIanaTimezone, 'invalid IANA timezone')
+      .optional(),
   })
   .meta({ id: 'IngestBatch' });
 

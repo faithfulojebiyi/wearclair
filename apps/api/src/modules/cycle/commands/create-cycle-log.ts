@@ -4,7 +4,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { AlsService } from '@system/als/als.service';
 import { AppPrismaService } from '@system/database/database.service';
 
-import { startOfDay } from '../cycle-model';
+import { startOfDay, todayKeyIn } from '../cycle-model';
 import { CreateCycleLogDto, CycleLogDto } from '../dto/cycle.dto';
 
 export class CreateCycleLogCommand extends Command<CycleLogDto> {
@@ -27,9 +27,19 @@ export class CreateCycleLogCommandHandler implements ICommandHandler<CreateCycle
       throw new UnauthorizedException();
     }
 
-    const date = command.dto.date
-      ? startOfDay(new Date(command.dto.date))
-      : startOfDay(new Date());
+    // no explicit day -> the user's local today (device-synced tz), never server UTC
+    let date: Date;
+
+    if (command.dto.date) {
+      date = startOfDay(new Date(command.dto.date));
+    } else {
+      const user = await this.appPrismaService.user.findUnique({
+        where: { id: userId },
+        select: { timezone: true },
+      });
+
+      date = new Date(todayKeyIn(user?.timezone));
+    }
 
     // upsert: one row per (user, day, category) — a repeated quick action replaces
     const log = await this.appPrismaService.cycleLog.upsert({

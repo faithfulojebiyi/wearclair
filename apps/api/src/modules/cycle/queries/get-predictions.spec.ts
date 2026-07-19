@@ -19,6 +19,7 @@ const makePrisma = (insight: {
     // no period logs — force the insight fallback
     cycleLog: { findMany: mock(async () => []) },
     dailyInsight: { findFirst: mock(async () => insight) },
+    user: { findUnique: mock(async () => ({ timezone: 'UTC' })) },
   };
 
   return prisma;

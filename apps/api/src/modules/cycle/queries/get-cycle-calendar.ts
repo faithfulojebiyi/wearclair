@@ -13,6 +13,7 @@ import {
   buildPeriodModel,
   dayKey,
   deriveCalendarDay,
+  todayKeyIn,
 } from '../cycle-model';
 import { CycleCalendarDto, GetCycleCalendarQueryDto } from '../dto/cycle.dto';
 
@@ -50,6 +51,11 @@ export class GetCycleCalendarQueryHandler implements IQueryHandler<GetCycleCalen
       ? this.appPrismaService.$primary()
       : this.appPrismaService;
 
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+
     const insights = await db.dailyInsight.findMany({
       where: { userId, date: { gte: from, lte: to } },
       orderBy: { date: 'asc' },
@@ -79,7 +85,8 @@ export class GetCycleCalendarQueryHandler implements IQueryHandler<GetCycleCalen
         .map((l) => dayKey(l.date)),
     );
 
-    const todayKey = dayKey(new Date());
+    // the user's local today (device-synced tz), not the server's UTC day
+    const todayKey = todayKeyIn(user?.timezone);
 
     // fallback projection (no period logs) from the latest known insight
     const fallbackCycleDay = (date: Date): number | null => {

@@ -24,9 +24,9 @@ describe('SetPeriodCommandHandler read-after-write', () => {
 
     await handler.execute(
       new SetPeriodCommand({
-        from: '2026-07-01T00:00:00Z',
-        to: '2026-07-05T00:00:00Z',
-        dates: ['2026-07-02T00:00:00Z'],
+        from: '2026-07-01',
+        to: '2026-07-05',
+        dates: ['2026-07-02'],
       }),
     );
 
@@ -41,10 +41,10 @@ describe('SetPeriodCommandHandler read-after-write', () => {
 describe('SetPeriod window bounds', () => {
   it('schema rejects dates outside [from, to]', () => {
     const result = SetPeriodSchema.safeParse({
-      from: '2026-07-01T00:00:00Z',
-      to: '2026-07-31T00:00:00Z',
+      from: '2026-07-01',
+      to: '2026-07-31',
       // a December date inside a July edit window
-      dates: ['2026-07-02T00:00:00Z', '2026-12-25T00:00:00Z'],
+      dates: ['2026-07-02', '2026-12-25'],
     });
 
     expect(result.success).toBe(false);
@@ -52,9 +52,9 @@ describe('SetPeriod window bounds', () => {
 
   it('schema accepts dates on the window boundaries', () => {
     const result = SetPeriodSchema.safeParse({
-      from: '2026-07-01T00:00:00Z',
-      to: '2026-07-31T00:00:00Z',
-      dates: ['2026-07-01T00:00:00Z', '2026-07-31T00:00:00Z'],
+      from: '2026-07-01',
+      to: '2026-07-31',
+      dates: ['2026-07-01', '2026-07-31'],
     });
 
     expect(result.success).toBe(true);
@@ -79,9 +79,9 @@ describe('SetPeriod window bounds', () => {
 
     await handler.execute(
       new SetPeriodCommand({
-        from: '2026-07-01T00:00:00Z',
-        to: '2026-07-05T00:00:00Z',
-        dates: ['2026-07-02T00:00:00Z', '2026-12-25T00:00:00Z'],
+        from: '2026-07-01',
+        to: '2026-07-05',
+        dates: ['2026-07-02', '2026-12-25'],
       }),
     );
 

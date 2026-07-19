@@ -19,9 +19,10 @@ Inngest functions so new code matches what already ships.
 ## General rules and conventions
 
 - Concise implementations. Don't over-abstract. Comments are short, lowercase, and explain the **why**.
-- **NEVER write or generate a Prisma migration file.** Only run `bun run prisma:generate` to validate
-  the schema and regenerate the client. The user runs `bun run prisma:migrate:app`. Reviewed
-  TimescaleDB SQL is separate and belongs in `timeseries/migrations/`.
+- **NEVER write, edit, or generate a Prisma migration file.** Only edit `schema.prisma` and run
+  `bun run prisma:generate`; the user runs `bun run prisma:migrate:app`. TimescaleDB is different:
+  tsdb migrations are hand-authored reviewed SQL — author NEW files under `timeseries/migrations/`
+  (append-only, never edit or renumber an existing one), applied with `bun run tsdb:migrate`.
 - Space code for readability: blank line before/after `if`/loops/blocks and before `return`.
 - ESLint-enforced import boundaries (do not violate):
   - `apps/api` cannot import from `apps/worker`, and vice versa.
@@ -139,7 +140,8 @@ export class ThingDto extends createZodDto(ThingSchema, { codec: true }) {}
   `prisma/app/schema.prisma`. Types: `@orm/app`.
 - Read replicas are transparent (active only with `APP_DATABASE_REPLICA_URL`) — no API change.
 - **Never write Prisma migration files.** Run `bun run prisma:generate`; the user runs them.
-  TimescaleDB migrations are reviewed SQL under `timeseries/migrations/`.
+  tsdb schema changes are NEW hand-authored SQL files under `timeseries/migrations/` (append-only,
+  never edit an applied one).
 
 ## ALS (api only)
 

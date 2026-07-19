@@ -43,9 +43,10 @@ export class ClassifyAndUpsertInsightsCommandHandler implements ICommandHandler<
      * would degrade rows derived earlier with full context. an unclipped
      * window holds the user's true start of history, so everything upserts.
      */
+    // mirrors load-daily-stats: to = windowEnd + 2d, from = to - HISTORY_DAYS
     const windowStart = new Date(
       new Date(command.event.windowEnd).getTime() +
-        DAY_MS -
+        2 * DAY_MS -
         HISTORY_DAYS * DAY_MS,
     );
     const firstDay = hydrated.length

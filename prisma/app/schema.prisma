@@ -33,6 +33,8 @@ model User {
   email         String
   emailVerified Boolean   @default(false) @map("email_verified")
   image         String?
+  // IANA zone, refreshed on device sync — defines this user's "today"
+  timezone      String?
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
   sessions       Session[]

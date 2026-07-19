@@ -20,7 +20,9 @@ export class LoadDailyStatsQueryHandler implements IQueryHandler<LoadDailyStatsQ
   constructor(private readonly biomarkerStore: BiomarkerStore) {}
 
   async execute(query: LoadDailyStatsQuery) {
-    const to = new Date(new Date(query.event.windowEnd).getTime() + DAY_MS);
+    // exclusive local-day bound: +2 days so zones ahead of UTC (up to +14h)
+    // never lose the freshly synced local day
+    const to = new Date(new Date(query.event.windowEnd).getTime() + 2 * DAY_MS);
     const from = new Date(to.getTime() - HISTORY_DAYS * DAY_MS);
 
     const stats = await this.biomarkerStore.queryDailyStats({

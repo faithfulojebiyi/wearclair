@@ -13,9 +13,11 @@ const makePrisma = () => {
   const prisma = {
     dailyInsight: { findMany: replicaFindMany, findFirst: replicaFindFirst },
     cycleLog: { findMany: replicaFindMany },
+    user: { findUnique: mock(async () => ({ timezone: 'UTC' })) },
     $primary: () => ({
       dailyInsight: { findMany: primaryFindMany, findFirst: primaryFindFirst },
       cycleLog: { findMany: primaryFindMany },
+      user: { findUnique: mock(async () => ({ timezone: 'UTC' })) },
     }),
   };
 
@@ -23,7 +25,7 @@ const makePrisma = () => {
 };
 
 const als = { ctx: { get: () => 'u1' } };
-const dto = { date: '2026-07-01T00:00:00Z' };
+const dto = { date: '2026-07-01' };
 
 describe('GetCycleDayQueryHandler replica routing', () => {
   it('uses the default (replica-eligible) client for plain reads', async () => {

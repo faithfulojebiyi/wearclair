@@ -254,3 +254,7 @@ try {
   await pool.onModuleDestroy();
   await prisma.$disconnect();
 }
+
+// the @system/auth import holds module-level clients (its own prisma + valkey)
+// with no close handle — exit explicitly so the event loop doesn't hang
+process.exit(0);

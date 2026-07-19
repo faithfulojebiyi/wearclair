@@ -10,10 +10,10 @@ import {
   DEFAULT_CYCLE_LENGTH,
   PERIOD_EXCLUDED,
   buildPeriodModel,
-  dayKey,
   deriveCalendarDay,
   fertilityChance,
   startOfDay,
+  todayKeyIn,
 } from '../cycle-model';
 import { CycleDaySummaryDto, GetCycleDayQueryDto } from '../dto/cycle.dto';
 
@@ -49,6 +49,11 @@ export class GetCycleDayQueryHandler implements IQueryHandler<GetCycleDayQuery> 
     const db = query.fresh
       ? this.appPrismaService.$primary()
       : this.appPrismaService;
+
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true },
+    });
 
     const insight = await db.dailyInsight.findFirst({
       where: { userId, date: day },
@@ -88,7 +93,7 @@ export class GetCycleDayQueryHandler implements IQueryHandler<GetCycleDayQuery> 
 
     const state = deriveCalendarDay({
       date: day,
-      todayKey: dayKey(new Date()),
+      todayKey: todayKeyIn(user?.timezone),
       insight: insight
         ? { cycleDay: insight.cycleDay, phase: toCyclePhase(insight.phase) }
         : null,

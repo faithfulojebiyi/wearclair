@@ -107,9 +107,10 @@ Null sentinels (plain `null` does not satisfy Prisma's typed-JSON write signatur
   `prisma/app/schema.prisma`. Generated types: `@orm/app`.
 - Read replicas are wired transparently via `@prisma/extension-read-replicas` (active only when
   `APP_DATABASE_REPLICA_URL` is set) — no API change for handlers.
-- **Never write or generate a Prisma migration file.** Run `bun run prisma:generate` to validate the
-  schema; the user runs `bun run prisma:migrate:app`. TimescaleDB is separate: reviewed SQL belongs in
-  `timeseries/migrations/` and is applied with `bun run tsdb:migrate`.
+- **Never write, edit, or generate a Prisma migration file.** Edit `schema.prisma` and run
+  `bun run prisma:generate` only; the user runs `bun run prisma:migrate:app`. TimescaleDB migrations
+  are hand-authored reviewed SQL: NEW files under `timeseries/migrations/` may be authored
+  (append-only — never edit or renumber an existing one) and applied with `bun run tsdb:migrate`.
 
 ## Event-Driven Communication (Inngest)
 
