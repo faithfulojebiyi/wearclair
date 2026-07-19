@@ -10,6 +10,8 @@ const REDACT_PATHS = [
   'req.headers.cookie',
   'req.headers["set-cookie"]',
   'res.headers["set-cookie"]',
+  // better-auth's bearer plugin returns the live session token here on sign-in
+  'res.headers["set-auth-token"]',
   '*.password',
   '*.token',
   '*.secret',
