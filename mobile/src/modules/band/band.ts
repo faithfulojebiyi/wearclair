@@ -13,8 +13,11 @@ const emit = (userId: string) => {
 };
 
 export const connectBand = (userId: string, emitMs: number = EMIT_MS): void => {
+  // restart rather than early-return: a stale interval (e.g. an account-change
+  // store wipe that never disconnected) must not wedge the connect toggle while
+  // silently emitting for the previous user
   if (timer) {
-    return;
+    clearInterval(timer);
   }
 
   store.setValue('connected', true);

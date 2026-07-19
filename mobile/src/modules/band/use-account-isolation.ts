@@ -39,6 +39,10 @@ export const useAccountIsolation = (
       }
 
       if (claimStore(userId)) {
+        // the wipe reset `connected` but the emit interval survives — stop it,
+        // or it keeps streaming the previous account's vitals into the fresh
+        // queue and blocks reconnect
+        disconnectBand();
         queryClient.clear();
       }
 
