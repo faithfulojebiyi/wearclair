@@ -1,6 +1,6 @@
 import { Pool, QueryResult, QueryResultRow } from 'pg';
 
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
 export type TsdbQueryFn = <Row extends QueryResultRow>(
   sql: string,
@@ -14,6 +14,7 @@ export type TsdbQueryFn = <Row extends QueryResultRow>(
 // bucket timestamps with a literal 'Z').
 @Injectable()
 export class TsdbPool implements OnModuleDestroy {
+  private readonly logger = new Logger(TsdbPool.name);
   private readonly pool: Pool;
 
   constructor() {
@@ -25,6 +26,14 @@ export class TsdbPool implements OnModuleDestroy {
         process.env.NODE_ENV !== 'development'
           ? { rejectUnauthorized: false }
           : undefined,
+    });
+
+    // pg emits 'error' when an idle client's backend dies — unhandled it kills the process
+    this.pool.on('error', (error) => {
+      this.logger.error(
+        { err: error },
+        'idle tsdb client errored — dropped from the pool',
+      );
     });
   }
 
