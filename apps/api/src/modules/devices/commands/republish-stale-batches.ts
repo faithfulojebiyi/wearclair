@@ -11,10 +11,17 @@ import { EventPublisherService } from '../../event-publisher/event-publisher.ser
 
 /**
  * recovery sweep: republish due RAW_WRITTEN batches (persisted backoff, no
- * starvation) and resolve RECEIVED strays against the tsdb (promote or FAILED).
+ * starvation), resolve RECEIVED strays against the tsdb (promote or FAILED),
+ * and demote dead-lettered PUBLISHED batches back to RAW_WRITTEN.
  */
 const ALERT_AFTER_ATTEMPTS = 5;
 const SWEEP_LIMIT = 100;
+
+/**
+ * PUBLISHED with no PROCESSED after this long = the worker dead-lettered. 24h
+ * clears inngest's event-id dedup window so the republish mints a fresh run.
+ */
+export const PUBLISHED_STUCK_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export class RepublishStaleBatchesCommand extends Command<{
   republished: number;
@@ -41,6 +48,31 @@ export class RepublishStaleBatchesCommandHandler implements ICommandHandler<Repu
     const primary = this.appPrismaService.$primary();
 
     const now = new Date();
+
+    /**
+     * PUBLISHED strays: the worker dead-lettered and nothing else revisits
+     * PUBLISHED — demote to RAW_WRITTEN, due now, so the republish leg below
+     * resends this sweep (processing is idempotent).
+     */
+    const demoted = await this.appPrismaService.syncBatch.updateMany({
+      where: {
+        status: SYNC_BATCH_STATUS.PUBLISHED,
+        publishedAt: {
+          lt: new Date(now.getTime() - PUBLISHED_STUCK_AFTER_MS),
+        },
+      },
+      data: {
+        status: SYNC_BATCH_STATUS.RAW_WRITTEN,
+        nextPublishAttemptAt: now,
+      },
+    });
+
+    if (demoted.count > 0) {
+      this.logger.warn(
+        { demoted: demoted.count },
+        'PUBLISHED batches never reached PROCESSED — worker dead-lettered; demoted for republish',
+      );
+    }
 
     // null schedule = legacy rows, due by base staleness
     const stale = await primary.syncBatch.findMany({

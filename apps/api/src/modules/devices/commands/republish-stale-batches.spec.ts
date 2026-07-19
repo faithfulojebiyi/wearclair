@@ -8,6 +8,7 @@ import {
   STALE_AFTER_MS,
 } from '../publish-backoff';
 import {
+  PUBLISHED_STUCK_AFTER_MS,
   RepublishStaleBatchesCommand,
   RepublishStaleBatchesCommandHandler,
 } from './republish-stale-batches';
@@ -36,6 +37,7 @@ const makeDeps = (
     struggling?: number;
     received?: ReturnType<typeof staleBatch>[];
     durable?: number;
+    stuckPublished?: number;
   } = {},
 ) => {
   // the sweep issues two findMany calls — dispatch the fake on the queried status
@@ -43,7 +45,21 @@ const makeDeps = (
     args?.where?.status === 'RECEIVED' ? (options.received ?? []) : batches,
   );
   const count = mock(async () => options.struggling ?? 0);
-  const updateMany = mock(async () => ({ count: 1 }));
+  // the PUBLISHED demote leg is status-dispatched too — 0 stuck rows by default
+  const updateMany = mock(
+    async (args: {
+      where?: { status?: string; publishedAt?: { lt?: Date } };
+      data?: {
+        status?: string;
+        publishAttempts?: unknown;
+        nextPublishAttemptAt?: Date | null;
+        sampleCount?: number;
+      };
+    }) =>
+      args?.where?.status === 'PUBLISHED'
+        ? { count: options.stuckPublished ?? 0 }
+        : { count: 1 },
+  );
   const countBatchRows = mock(async () => options.durable ?? 0);
 
   const prisma = {
@@ -85,10 +101,10 @@ describe('RepublishStaleBatchesCommandHandler', () => {
     );
     expect(ids).toEqual(['device-batch-b1', 'device-batch-b2']);
 
-    const updates = deps.updateMany.mock.calls.map(
-      // @ts-expect-error — mock call args are loosely typed
-      (call) => call[0]?.data,
-    );
+    // skip the PUBLISHED demote write that opens every sweep
+    const updates = deps.updateMany.mock.calls
+      .filter((call) => call[0]?.where?.status !== 'PUBLISHED')
+      .map((call) => call[0]?.data);
     expect(updates.map((data) => data?.status)).toEqual([
       'PUBLISHED',
       'PUBLISHED',
@@ -115,14 +131,13 @@ describe('RepublishStaleBatchesCommandHandler', () => {
     // b1 failed, b2 went through
     expect(result.republished).toBe(1);
 
-    const calls = deps.updateMany.mock.calls.map((call) => ({
-      // @ts-expect-error — mock call args are loosely typed
-      status: call[0]?.data?.status,
-      // @ts-expect-error — mock call args are loosely typed
-      attempts: call[0]?.data?.publishAttempts,
-      // @ts-expect-error — mock call args are loosely typed
-      nextAttemptAt: call[0]?.data?.nextPublishAttemptAt,
-    }));
+    const calls = deps.updateMany.mock.calls
+      .filter((call) => call[0]?.where?.status !== 'PUBLISHED')
+      .map((call) => ({
+        status: call[0]?.data?.status,
+        attempts: call[0]?.data?.publishAttempts,
+        nextAttemptAt: call[0]?.data?.nextPublishAttemptAt,
+      }));
 
     expect(calls[0]?.status).toBeUndefined();
     expect(calls[0]?.attempts).toEqual({ increment: 1 });
@@ -194,8 +209,9 @@ describe('RepublishStaleBatchesCommandHandler', () => {
 
     expect(result.republished).toBe(1);
 
-    // @ts-expect-error — mock call args are loosely typed
-    const promote = deps.updateMany.mock.calls[0][0];
+    const promote = deps.updateMany.mock.calls.find(
+      (call) => call[0]?.where?.status === 'RECEIVED',
+    )?.[0];
     expect(promote?.where?.status).toBe('RECEIVED');
     expect(promote?.data?.status).toBe('RAW_WRITTEN');
     expect(promote?.data?.sampleCount).toBe(42);
@@ -218,9 +234,37 @@ describe('RepublishStaleBatchesCommandHandler', () => {
     expect(result.republished).toBe(0);
     expect(deps.sendEvent).not.toHaveBeenCalled();
 
-    // @ts-expect-error — mock call args are loosely typed
-    const fail = deps.updateMany.mock.calls[0][0];
+    const fail = deps.updateMany.mock.calls.find(
+      (call) => call[0]?.where?.status === 'RECEIVED',
+    )?.[0];
     expect(fail?.where?.status).toBe('RECEIVED');
     expect(fail?.data?.status).toBe('FAILED');
+  });
+
+  it('demotes dead-lettered PUBLISHED batches back to RAW_WRITTEN, due now', async () => {
+    deps = makeDeps([], { stuckPublished: 2 });
+    const warnSpy = spyOn(Logger.prototype, 'warn').mockImplementation(
+      () => undefined,
+    );
+    const handler = makeHandler(deps);
+
+    await handler.execute(new RepublishStaleBatchesCommand());
+
+    const demote = deps.updateMany.mock.calls[0]?.[0];
+    expect(demote?.where?.status).toBe('PUBLISHED');
+    expect(demote?.data?.status).toBe('RAW_WRITTEN');
+    expect(demote?.data?.nextPublishAttemptAt).toBeInstanceOf(Date);
+
+    // cutoff sits a full dedup window back so the republish mints a fresh run
+    const cutoff = demote?.where?.publishedAt?.lt;
+    expect(
+      Math.abs(
+        (cutoff as Date).getTime() - (Date.now() - PUBLISHED_STUCK_AFTER_MS),
+      ),
+    ).toBeLessThan(5000);
+
+    // demotions are alerted, not silent
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
