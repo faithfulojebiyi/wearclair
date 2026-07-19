@@ -47,7 +47,7 @@ bun run infra:up                # ministack AWS emulator (S3 etc.) on http://127
 bun run infra:down              # stop it · bun run infra:logs tails it
 bun run lint                    # eslint --fix
 bun run format                  # prettier
-bun test apps libs              # bun's test runner
+bun test apps libs timeseries   # bun's test runner
 ```
 
 ## Path Aliases
