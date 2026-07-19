@@ -6,7 +6,7 @@ import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 import { InsightDailyStat } from '../schema';
 
 // enough history for the classifier to see full cycles + its warm-up window
-const HISTORY_DAYS = 70;
+export const HISTORY_DAYS = 70;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class LoadDailyStatsQuery extends Query<InsightDailyStat[]> {

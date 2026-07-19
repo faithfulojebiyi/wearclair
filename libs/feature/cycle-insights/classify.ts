@@ -38,6 +38,9 @@ const OVULATORY_DAYS = 2;
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
+// days before the first index that can ever latch (3-day mean + 7-day baseline)
+export const CLASSIFIER_WARMUP_DAYS = SHORT_WINDOW + BASELINE_WINDOW - 1;
+
 const mean = (values: number[]): number =>
   values.reduce((sum, value) => sum + value, 0) / values.length;
 
@@ -65,9 +68,18 @@ const toDayMetrics = (stats: DailyStat[]): DayMetrics[] => {
     byDay.set(key, entry);
   }
 
-  return [...byDay.values()].sort(
-    (a, b) => a.date.getTime() - b.date.getTime(),
-  );
+  const keys = [...byDay.keys()];
+  const first = Math.min(...keys);
+  const last = Math.max(...keys);
+
+  // fill absent calendar days so the moving windows never silently span a gap
+  const days: DayMetrics[] = [];
+
+  for (let key = first; key <= last; key += DAY_MS) {
+    days.push(byDay.get(key) ?? { date: new Date(key) });
+  }
+
+  return days;
 };
 
 // two-state latch over the temperature series: trigger when the 3-day moving
@@ -75,9 +87,12 @@ const toDayMetrics = (stats: DailyStat[]): DayMetrics[] => {
 // elevated (against the FROZEN pre-shift baseline — a rolling one would chase the
 // elevation and drop out mid-luteal) until temperature falls back within half the
 // shift of that baseline.
-const computeElevated = (days: DayMetrics[]): boolean[] => {
+const computeElevated = (
+  days: DayMetrics[],
+): { elevated: boolean[]; dropped: boolean[] } => {
   const temps = days.map((day) => day.temp);
   const elevated = days.map(() => false);
+  const dropped = days.map(() => false);
 
   let frozenBaseline: number | undefined;
 
@@ -86,7 +101,8 @@ const computeElevated = (days: DayMetrics[]): boolean[] => {
     const shortWindow = temps.slice(Math.max(0, shortStart), index + 1);
 
     if (shortWindow.some((temp) => temp === undefined)) {
-      frozenBaseline = undefined;
+      // hold the latch through data gaps — only a measured window changes state
+      elevated[index] = frozenBaseline !== undefined;
       continue;
     }
 
@@ -115,10 +131,12 @@ const computeElevated = (days: DayMetrics[]): boolean[] => {
       elevated[index] = true;
     } else {
       frozenBaseline = undefined;
+      // a measured fall below the release threshold — evidence of menses
+      dropped[index] = true;
     }
   }
 
-  return elevated;
+  return { elevated, dropped };
 };
 
 export const classifyCycleDays = (stats: DailyStat[]): PerDayInsight[] => {
@@ -128,13 +146,16 @@ export const classifyCycleDays = (stats: DailyStat[]): PerDayInsight[] => {
     return [];
   }
 
-  const elevated = computeElevated(days);
+  const { elevated, dropped } = computeElevated(days);
 
-  // menses onset = the temperature drop after a sustained luteal elevation
+  /**
+   * menses onset = a MEASURED temperature drop after sustained luteal elevation.
+   * a data gap releasing the latch is not evidence of menses.
+   */
   const onsets: number[] = [];
 
   for (let i = 1; i < days.length; i += 1) {
-    if (elevated[i - 1] && !elevated[i]) {
+    if (dropped[i]) {
       onsets.push(i);
     }
   }

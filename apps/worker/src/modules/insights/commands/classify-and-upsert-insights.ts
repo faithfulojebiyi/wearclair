@@ -1,9 +1,13 @@
 import { Command, CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 
-import { classifyCycleDays } from '@feature/cycle-insights/classify';
+import {
+  CLASSIFIER_WARMUP_DAYS,
+  classifyCycleDays,
+} from '@feature/cycle-insights/classify';
 import { AppPrismaService } from '@system/database/database.service';
 import { DeviceBatchSyncedDto } from '@system/queues/dto/device-batch-synced.dto';
 
+import { HISTORY_DAYS } from '../queries/load-daily-stats';
 import { InsightDailyStat, UpsertInsightsResult } from '../schema';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +37,30 @@ export class ClassifyAndUpsertInsightsCommandHandler implements ICommandHandler<
 
     const insights = classifyCycleDays(hydrated);
 
+    /**
+     * when the loaded window clips older history, its first warm-up days can
+     * never classify as elevated (no pre-window baseline) — upserting them
+     * would degrade rows derived earlier with full context. an unclipped
+     * window holds the user's true start of history, so everything upserts.
+     */
+    const windowStart = new Date(
+      new Date(command.event.windowEnd).getTime() +
+        DAY_MS -
+        HISTORY_DAYS * DAY_MS,
+    );
+    const firstDay = hydrated.length
+      ? Math.min(...hydrated.map((stat) => stat.day.getTime()))
+      : undefined;
+
+    const upsertable =
+      firstDay !== undefined && firstDay - windowStart.getTime() < 2 * DAY_MS
+        ? insights.filter(
+            (insight) =>
+              insight.date.getTime() >=
+              firstDay + CLASSIFIER_WARMUP_DAYS * DAY_MS,
+          )
+        : insights;
+
     const samplesPerDay = new Map<number, number>();
 
     for (const stat of hydrated) {
@@ -40,7 +68,7 @@ export class ClassifyAndUpsertInsightsCommandHandler implements ICommandHandler<
       samplesPerDay.set(key, (samplesPerDay.get(key) ?? 0) + stat.count);
     }
 
-    for (const insight of insights) {
+    for (const insight of upsertable) {
       const dayStart = insight.date;
       const dayEnd = new Date(dayStart.getTime() + DAY_MS);
 
@@ -73,6 +101,6 @@ export class ClassifyAndUpsertInsightsCommandHandler implements ICommandHandler<
       });
     }
 
-    return { upserted: insights.length };
+    return { upserted: upsertable.length };
   }
 }

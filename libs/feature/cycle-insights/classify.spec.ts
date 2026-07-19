@@ -129,6 +129,39 @@ describe('classifyCycleDays', () => {
     }
   });
 
+  it('does not fabricate a menses onset from a mid-luteal data gap', () => {
+    const full = classifyCycleDays(stats);
+    const at = (time: number) => full.find((i) => i.date.getTime() === time);
+
+    // a luteal day past warm-up whose next two days are also luteal, so the
+    // real drop is measured on windows that never include the gap
+    const lutealDay = full.find(
+      (i) =>
+        i.phase === CyclePhase.LUTEAL &&
+        i.date.getTime() >= FROM.getTime() + 20 * DAY_MS &&
+        at(i.date.getTime() + DAY_MS)?.phase === CyclePhase.LUTEAL &&
+        at(i.date.getTime() + 2 * DAY_MS)?.phase === CyclePhase.LUTEAL,
+    );
+    expect(lutealDay).toBeDefined();
+
+    const gapDay = lutealDay!.date.toISOString().slice(0, 10);
+    const gapped = stats.filter(
+      (stat) => stat.day.toISOString().slice(0, 10) !== gapDay,
+    );
+
+    const insights = classifyCycleDays(gapped);
+
+    // the gap day is withheld; every other day keeps its phase and cycle day
+    expect(insights.length).toBe(full.length - 1);
+
+    for (const insight of insights) {
+      const original = at(insight.date.getTime());
+
+      expect(original?.phase).toBe(insight.phase);
+      expect(original?.cycleDay).toBe(insight.cycleDay);
+    }
+  });
+
   it('returns no insights when only one classifier metric exists at all', () => {
     const tempOnly = stats.filter((stat) => stat.metric === 'skin_temp');
 
