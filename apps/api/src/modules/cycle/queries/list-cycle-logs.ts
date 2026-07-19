@@ -4,6 +4,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { AlsService } from '@system/als/als.service';
 import { AppPrismaService } from '@system/database/database.service';
 
+import { PERIOD_EXCLUDED } from '../cycle-model';
 import { CycleLogListDto } from '../dto/cycle.dto';
 
 export class ListCycleLogsQuery extends Query<CycleLogListDto> {
@@ -27,7 +28,8 @@ export class ListCycleLogsQueryHandler implements IQueryHandler<ListCycleLogsQue
     }
 
     const logs = await this.appPrismaService.cycleLog.findMany({
-      where: { userId },
+      // period tombstones drive derivation but are not user-visible logs
+      where: { userId, NOT: { type: 'period', value: PERIOD_EXCLUDED } },
       orderBy: { loggedAt: 'desc' },
       take: 50,
     });

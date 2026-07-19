@@ -51,7 +51,15 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   await app.register(fastifyMultipart, {
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50mb max file size
+    // parts are buffered in memory downstream — cap counts, not just file size,
+    // so a single many-part request can't balloon the heap
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50mb max file size
+      files: 5,
+      fields: 50,
+      parts: 60,
+      fieldSize: 1024 * 1024,
+    },
   });
 
   const apiPrefix = configService.get<string>('API_PREFIX') || '/';

@@ -6,9 +6,21 @@ import { formatBytes } from './format';
 export interface MultipartOptions {
   /** Maximum file size in bytes */
   maxFileSize?: number;
+  /** Maximum number of file parts (default 5) */
+  maxFiles?: number;
+  /** Maximum number of parts overall (default 60) */
+  maxParts?: number;
   /** Allowed MIME types for file uploads */
   allowedMimeTypes?: string[];
 }
+
+/**
+ * Every file part is buffered fully in memory below, so the part/file counts
+ * must be bounded even when the caller passes no options — otherwise a single
+ * many-part request can exhaust the heap.
+ */
+const DEFAULT_MAX_FILES = 5;
+const DEFAULT_MAX_PARTS = 60;
 
 /**
  * Minimal structural shapes for the parts emitted by `@fastify/multipart`'s
@@ -83,9 +95,31 @@ export async function parseMultipartFormData(
       : undefined,
   );
 
+  const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
+  const maxParts = options.maxParts ?? DEFAULT_MAX_PARTS;
+  let fileCount = 0;
+  let partCount = 0;
+
   try {
     for await (const part of parts) {
+      partCount += 1;
+
+      if (partCount > maxParts) {
+        throw new PayloadTooLargeException(
+          `Too many multipart parts (max: ${maxParts})`,
+        );
+      }
+
       if (part.type === 'file') {
+        fileCount += 1;
+
+        if (fileCount > maxFiles) {
+          part.file.resume(); // Drain the stream
+          throw new PayloadTooLargeException(
+            `Too many file parts (max: ${maxFiles})`,
+          );
+        }
+
         // Validate MIME type if allowedMimeTypes is specified
         if (options.allowedMimeTypes && options.allowedMimeTypes.length > 0) {
           if (!options.allowedMimeTypes.includes(part.mimetype)) {

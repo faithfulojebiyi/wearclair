@@ -86,6 +86,28 @@ describe('parseMultipartFormData', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('throws PayloadTooLarge past the file-count cap instead of buffering', async () => {
+    const parts = Array.from({ length: 3 }, (_, i) =>
+      filePart({ fieldname: `file${i}` }),
+    );
+
+    await expect(
+      parseMultipartFormData(multipartRequest(parts), { maxFiles: 2 }),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+  });
+
+  it('throws PayloadTooLarge past the total part-count cap', async () => {
+    const parts: Part[] = Array.from({ length: 4 }, (_, i) => ({
+      type: 'field',
+      fieldname: `f${i}`,
+      value: 'x',
+    }));
+
+    await expect(
+      parseMultipartFormData(multipartRequest(parts), { maxParts: 3 }),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+  });
+
   it('throws PayloadTooLarge when a file is truncated by the size limit', async () => {
     await expect(
       parseMultipartFormData(

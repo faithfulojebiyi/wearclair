@@ -13,6 +13,13 @@ export const OVULATION_DAY = 14;
 export const FERTILE_START = 10;
 export const FERTILE_END = 15;
 
+/**
+ * CycleLog.value tombstone for type 'period': the user explicitly unmarked the
+ * day, which must override the worker's MENSTRUAL classification. a bare delete
+ * cannot — absence is indistinguishable from "never logged".
+ */
+export const PERIOD_EXCLUDED = 'excluded';
+
 export const dayKey = (date: Date) => date.toISOString().slice(0, 10);
 
 // midnight-UTC start of the given date (matches how @db.Date rows come back)
@@ -147,6 +154,7 @@ interface DeriveDayInputs {
   todayKey: string;
   insight: { cycleDay: number; phase: CyclePhase } | null;
   isLoggedPeriod: boolean;
+  isExcludedPeriod: boolean; // user tombstone — overrides every period source
   model: PeriodModel | null;
   fallbackCycleDay: number | null; // latest-insight projection when there's no model
 }
@@ -167,9 +175,10 @@ export const deriveCalendarDay = (inp: DeriveDayInputs): CalendarDayState => {
       cycleDay,
       phase,
       isPeriod:
-        phase === CyclePhase.MENSTRUAL ||
-        inp.isLoggedPeriod ||
-        (phase === null && cycleDay <= 5),
+        !inp.isExcludedPeriod &&
+        (phase === CyclePhase.MENSTRUAL ||
+          inp.isLoggedPeriod ||
+          (phase === null && cycleDay <= 5)),
       isFertile: cycleDay >= FERTILE_START && cycleDay <= FERTILE_END,
       isOvulation: cycleDay === OVULATION_DAY,
       isPredicted,
@@ -183,7 +192,7 @@ export const deriveCalendarDay = (inp: DeriveDayInputs): CalendarDayState => {
     return {
       cycleDay: proj.cycleDay,
       phase,
-      isPeriod: proj.isPeriod || inp.isLoggedPeriod,
+      isPeriod: !inp.isExcludedPeriod && (proj.isPeriod || inp.isLoggedPeriod),
       isFertile: proj.isFertile,
       isOvulation: proj.isOvulation,
       isPredicted,
@@ -197,9 +206,10 @@ export const deriveCalendarDay = (inp: DeriveDayInputs): CalendarDayState => {
     cycleDay,
     phase,
     isPeriod:
-      phase === CyclePhase.MENSTRUAL ||
-      inp.isLoggedPeriod ||
-      (phase === null && cycleDay !== null && cycleDay <= 5),
+      !inp.isExcludedPeriod &&
+      (phase === CyclePhase.MENSTRUAL ||
+        inp.isLoggedPeriod ||
+        (phase === null && cycleDay !== null && cycleDay <= 5)),
     isFertile:
       cycleDay !== null && cycleDay >= FERTILE_START && cycleDay <= FERTILE_END,
     isOvulation: cycleDay === OVULATION_DAY,

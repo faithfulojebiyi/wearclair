@@ -9,7 +9,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { AlsService } from '@system/als/als.service';
 import { AppPrismaService } from '@system/database/database.service';
 
-import { dayKey, startOfDay } from '../cycle-model';
+import { DAY_MS, PERIOD_EXCLUDED, dayKey, startOfDay } from '../cycle-model';
 import { CycleCalendarDto, SetPeriodDto } from '../dto/cycle.dto';
 import { GetCycleCalendarQuery } from '../queries/get-cycle-calendar';
 
@@ -66,6 +66,32 @@ export class SetPeriodCommandHandler implements ICommandHandler<SetPeriodCommand
             userId,
             type: 'period',
             value: 'logged',
+            date: new Date(key),
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      /**
+       * tombstone the unmarked window days — a bare delete would let the
+       * worker's MENSTRUAL classification re-mark them on the next read.
+       */
+      const excluded: string[] = [];
+
+      for (let t = from.getTime(); t <= to.getTime(); t += DAY_MS) {
+        const key = dayKey(new Date(t));
+
+        if (!keep.has(key)) {
+          excluded.push(key);
+        }
+      }
+
+      if (excluded.length > 0) {
+        await tx.cycleLog.createMany({
+          data: excluded.map((key) => ({
+            userId,
+            type: 'period',
+            value: PERIOD_EXCLUDED,
             date: new Date(key),
           })),
           skipDuplicates: true,

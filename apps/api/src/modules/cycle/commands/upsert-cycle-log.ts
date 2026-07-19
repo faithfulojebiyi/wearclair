@@ -9,7 +9,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { AlsService } from '@system/als/als.service';
 import { AppPrismaService } from '@system/database/database.service';
 
-import { startOfDay } from '../cycle-model';
+import { PERIOD_EXCLUDED, startOfDay } from '../cycle-model';
 import { CycleDaySummaryDto, UpsertCycleLogDto } from '../dto/cycle.dto';
 import { GetCycleDayQuery } from '../queries/get-cycle-day';
 
@@ -41,7 +41,15 @@ export class UpsertCycleLogCommandHandler implements ICommandHandler<UpsertCycle
     const value = command.dto.value.trim();
     const date = startOfDay(new Date(command.dto.date));
 
-    if (value.length === 0) {
+    if (value.length === 0 && type === 'period') {
+      // period deselect is a tombstone, not a delete — the worker's MENSTRUAL
+      // classification must not re-mark a day the user explicitly cleared
+      await this.appPrismaService.cycleLog.upsert({
+        where: { userId_date_type: { userId, date, type } },
+        create: { userId, date, type, value: PERIOD_EXCLUDED, note: null },
+        update: { value: PERIOD_EXCLUDED, note: null },
+      });
+    } else if (value.length === 0) {
       // deselect-all → remove the row entirely
       await this.appPrismaService.cycleLog.deleteMany({
         where: { userId, date, type },

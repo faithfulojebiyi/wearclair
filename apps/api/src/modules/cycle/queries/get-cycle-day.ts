@@ -8,6 +8,7 @@ import { AppPrismaService } from '@system/database/database.service';
 import {
   DAY_MS,
   DEFAULT_CYCLE_LENGTH,
+  PERIOD_EXCLUDED,
   buildPeriodModel,
   dayKey,
   deriveCalendarDay,
@@ -59,14 +60,19 @@ export class GetCycleDayQueryHandler implements IQueryHandler<GetCycleDayQuery> 
     });
 
     const periodLogs = await db.cycleLog.findMany({
-      where: { userId, type: 'period' },
+      where: { userId, type: 'period', value: { not: PERIOD_EXCLUDED } },
       select: { date: true },
     });
 
-    const logs = await db.cycleLog.findMany({
+    const allLogs = await db.cycleLog.findMany({
       where: { userId, date: day },
       orderBy: { type: 'asc' },
     });
+
+    // tombstones drive derivation but are not user-visible logs
+    const logs = allLogs.filter(
+      (l) => !(l.type === 'period' && l.value === PERIOD_EXCLUDED),
+    );
 
     const model = buildPeriodModel(periodLogs.map((l) => l.date));
 
@@ -87,6 +93,9 @@ export class GetCycleDayQueryHandler implements IQueryHandler<GetCycleDayQuery> 
         ? { cycleDay: insight.cycleDay, phase: toCyclePhase(insight.phase) }
         : null,
       isLoggedPeriod: logs.some((l) => l.type === 'period'),
+      isExcludedPeriod: allLogs.some(
+        (l) => l.type === 'period' && l.value === PERIOD_EXCLUDED,
+      ),
       model,
       fallbackCycleDay,
     });

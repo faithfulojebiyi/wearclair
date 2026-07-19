@@ -9,6 +9,7 @@ import {
   CalendarDayState,
   DAY_MS,
   DEFAULT_CYCLE_LENGTH,
+  PERIOD_EXCLUDED,
   buildPeriodModel,
   dayKey,
   deriveCalendarDay,
@@ -62,13 +63,21 @@ export class GetCycleCalendarQueryHandler implements IQueryHandler<GetCycleCalen
     // ALL period logs — needed to derive cycle length + anchor, not just in-range
     const periodLogs = await db.cycleLog.findMany({
       where: { userId, type: 'period' },
-      select: { date: true },
+      select: { date: true, value: true },
     });
 
-    const model = buildPeriodModel(periodLogs.map((l) => l.date));
+    // tombstones are user "not a period day" overrides, never model input
+    const logged = periodLogs.filter((l) => l.value !== PERIOD_EXCLUDED);
+
+    const model = buildPeriodModel(logged.map((l) => l.date));
 
     const byDate = new Map(insights.map((i) => [dayKey(i.date), i]));
-    const periodDays = new Set(periodLogs.map((l) => dayKey(l.date)));
+    const periodDays = new Set(logged.map((l) => dayKey(l.date)));
+    const excludedDays = new Set(
+      periodLogs
+        .filter((l) => l.value === PERIOD_EXCLUDED)
+        .map((l) => dayKey(l.date)),
+    );
 
     const todayKey = dayKey(new Date());
 
@@ -105,6 +114,7 @@ export class GetCycleCalendarQueryHandler implements IQueryHandler<GetCycleCalen
           ? { cycleDay: insight.cycleDay, phase: toCyclePhase(insight.phase) }
           : null,
         isLoggedPeriod: periodDays.has(key),
+        isExcludedPeriod: excludedDays.has(key),
         model,
         fallbackCycleDay: fallbackCycleDay(date),
       });

@@ -12,6 +12,7 @@ import {
   FERTILE_END,
   FERTILE_START,
   OVULATION_DAY,
+  PERIOD_EXCLUDED,
   buildPeriodModel,
   phaseForDay,
   projectCycleDay,
@@ -63,7 +64,8 @@ export class GetPredictionsQueryHandler implements IQueryHandler<GetPredictionsQ
     }
 
     const periodLogs = await this.appPrismaService.cycleLog.findMany({
-      where: { userId, type: 'period' },
+      // tombstones (user unmarked the day) are never model input
+      where: { userId, type: 'period', value: { not: PERIOD_EXCLUDED } },
       select: { date: true },
     });
 

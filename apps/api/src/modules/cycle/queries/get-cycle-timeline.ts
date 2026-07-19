@@ -4,7 +4,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { AlsService } from '@system/als/als.service';
 import { AppPrismaService } from '@system/database/database.service';
 
-import { DAY_MS, dayKey } from '../cycle-model';
+import { DAY_MS, PERIOD_EXCLUDED, dayKey } from '../cycle-model';
 import { CycleTimelineDto } from '../dto/cycle.dto';
 
 // human labels for each log category shown in the timeline
@@ -66,7 +66,9 @@ export class GetCycleTimelineQueryHandler implements IQueryHandler<GetCycleTimel
     // group logged period days into contiguous runs → start/end markers
     const periodDays = [
       ...new Set(
-        logs.filter((l) => l.type === 'period').map((l) => dayKey(l.date)),
+        logs
+          .filter((l) => l.type === 'period' && l.value !== PERIOD_EXCLUDED)
+          .map((l) => dayKey(l.date)),
       ),
     ].sort();
 
