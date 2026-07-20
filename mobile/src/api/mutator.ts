@@ -1,4 +1,4 @@
-import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
+import { create, type AxiosError, type AxiosRequestConfig } from 'axios';
 import { Platform } from 'react-native';
 
 import { authClient } from '@/modules/auth/auth-client';
@@ -10,7 +10,7 @@ import { getToken } from '@/modules/auth/token';
 // on web there IS a cookie jar: withCredentials sends the browser's better-auth
 // cookie cross-origin (the api reflects localhost:8081 in its CORS allowlist with
 // credentials enabled). controllers return raw payloads, so we unwrap to data.
-const instance = axios.create({ baseURL: API_URL, withCredentials: true });
+const instance = create({ baseURL: API_URL, withCredentials: true });
 
 instance.interceptors.request.use((config) => {
   // native: the Cookie header is the primary auth path (expo plugin). getCookie()
@@ -42,17 +42,17 @@ export const customInstance = <T>(
   config: AxiosRequestConfig,
   options?: AxiosRequestConfig,
 ): Promise<T> => {
-  const source = axios.CancelToken.source();
+  const controller = new AbortController();
 
   const promise = instance({
     ...config,
     ...options,
-    cancelToken: source.token,
+    signal: controller.signal,
   }).then(({ data }) => data as T);
 
   // orval calls promise.cancel() to abort in-flight requests (e.g. on unmount)
   (promise as Promise<T> & { cancel?: () => void }).cancel = () => {
-    source.cancel('Query was cancelled');
+    controller.abort('Query was cancelled');
   };
 
   return promise;

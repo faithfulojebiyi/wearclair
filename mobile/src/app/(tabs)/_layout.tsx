@@ -63,7 +63,7 @@ export default function TabsLayout() {
   );
 
   // background vitals sync engine — drains the local queue to the backend app-wide.
-  useVitalsSync(devices.data?.devices[0]?.id, session?.user?.id);
+  useVitalsSync(devices.data?.devices[0]?.id, session?.user?.id, refetch);
 
   // realtime "derivation finished" push
   useSyncUpdates(Boolean(session) && resolved);
@@ -118,11 +118,7 @@ export default function TabsLayout() {
         tabBarStyle: styles.glassTabBar,
         tabBarItemStyle: { paddingTop: 12 },
         tabBarBackground: () => (
-          <BlurView
-            intensity={28}
-            style={StyleSheet.absoluteFill}
-            tint="light"
-          >
+          <BlurView intensity={28} style={StyleSheet.absoluteFill} tint="light">
             <View style={styles.glassOverlay} />
           </BlurView>
         ),

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -35,9 +35,9 @@ export const WeekStrip = ({
 
   const todayKey = dayKey(new Date());
 
-  // the initial selection anchors the range; kept in a ref so the day list is stable
+  // the initial selection anchors the range; kept in state so the day list is stable
   // as the selection changes (tapping a visible day shouldn't rebuild/rescroll it).
-  const initialSelected = useRef(selected).current;
+  const [initialSelected] = useState(selected);
 
   const days = useMemo(() => {
     const sel = new Date(`${initialSelected}T00:00:00Z`);
@@ -52,9 +52,11 @@ export const WeekStrip = ({
     const end = new Date(hi.getTime() + (6 - hi.getUTCDay()) * DAY_MS);
     const count = Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1;
 
-    return Array.from({ length: count }, (_, i) => new Date(start.getTime() + i * DAY_MS));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return Array.from(
+      { length: count },
+      (_, i) => new Date(start.getTime() + i * DAY_MS),
+    );
+  }, [initialSelected]);
 
   const initialIndex = Math.max(
     0,
@@ -71,7 +73,7 @@ export const WeekStrip = ({
   );
 
   // report the centered month up to the header
-  const onViewable = useRef(
+  const onViewable = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const mid = viewableItems[Math.floor(viewableItems.length / 2)];
       const date = mid?.item as Date | undefined;
@@ -85,11 +87,18 @@ export const WeekStrip = ({
         onMonthChange(label);
       }
     },
-  ).current;
+    [onMonthChange],
+  );
 
-  const viewabilityPairs = useRef([
-    { viewabilityConfig: { itemVisiblePercentThreshold: 50 }, onViewableItemsChanged: onViewable },
-  ]).current;
+  const viewabilityPairs = useMemo(
+    () => [
+      {
+        viewabilityConfig: { itemVisiblePercentThreshold: 50 },
+        onViewableItemsChanged: onViewable,
+      },
+    ],
+    [onViewable],
+  );
 
   return (
     <FlatList

@@ -57,15 +57,14 @@ describe('BiomarkerStore.insertBatch atomicity', () => {
   });
 });
 
-describe('BiomarkerStore.refreshRollups', () => {
-  it('refreshes both rollups outside any transaction, never past the current bucket', async () => {
+describe('BiomarkerStore.refreshChartRollups', () => {
+  it('materializes both chart rollups outside the live worker pipeline', async () => {
     const pool = makePool();
     // @ts-expect-error — minimal fake pool for the store under test
     const store = new BiomarkerStore(pool);
 
-    await store.refreshRollups();
+    await store.refreshChartRollups();
 
-    // CALL refresh_continuous_aggregate cannot run inside a transaction
     expect(pool.withTransaction).not.toHaveBeenCalled();
     expect(pool.poolQuery).toHaveBeenCalledTimes(2);
 
@@ -75,13 +74,38 @@ describe('BiomarkerStore.refreshRollups', () => {
     );
     expect(statements[0]).toContain(`'biomarker_1h'`);
     expect(statements[1]).toContain(`'biomarker_1d'`);
+  });
+});
 
-    for (const statement of statements) {
-      // end bound stops at the current bucket start — a NULL end would
-      // materialize the incomplete bucket and push the watermark into the
-      // future, hiding later live-sync samples from the real-time union
-      expect(statement).toContain('time_bucket');
-      expect(statement).not.toMatch(/NULL\s*\)/i);
-    }
+describe('BiomarkerStore.queryDailyStats', () => {
+  it('groups raw samples by their stamped local day instead of a UTC rollup', async () => {
+    const pool = makePool();
+    pool.poolQuery.mockImplementationOnce(async () => ({
+      rows: [
+        {
+          day: '2026-07-20',
+          metric: 'skin_temp',
+          avg_value: 36.7,
+          min_value: 36.5,
+          max_value: 36.9,
+          sample_count: '12',
+        },
+      ],
+    }));
+    // @ts-expect-error — minimal fake pool for the store under test
+    const store = new BiomarkerStore(pool);
+
+    const stats = await store.queryDailyStats({
+      userId: 'u1',
+      metrics: ['skin_temp'],
+      from: new Date('2026-07-01T00:00:00.000Z'),
+      to: new Date('2026-07-21T00:00:00.000Z'),
+    });
+
+    const statement = pool.poolQuery.mock.calls[0]?.[0] as string;
+    expect(statement).toContain('FROM raw_biomarker');
+    expect(statement).toContain('GROUP BY local_day, metric');
+    expect(statement).not.toContain('biomarker_1d');
+    expect(stats[0]?.day).toEqual(new Date('2026-07-20T00:00:00.000Z'));
   });
 });

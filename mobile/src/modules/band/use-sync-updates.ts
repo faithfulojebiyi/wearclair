@@ -55,7 +55,9 @@ export const useSyncUpdates = (enabled: boolean): void => {
         }
 
         // string-built ws url: react-native's URL has no working searchParams
-        const base = token.apiBaseUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
+        const base = token.apiBaseUrl
+          .replace(/^http/, 'ws')
+          .replace(/\/+$/, '');
         ws = new WebSocket(
           `${base}/v1/realtime/connect?token=${encodeURIComponent(token.key)}`,
         );
@@ -76,7 +78,7 @@ export const useSyncUpdates = (enabled: boolean): void => {
           if (isBatchProcessedMessage(message)) {
             queryClient.invalidateQueries({ queryKey: ['insights'] });
             queryClient.invalidateQueries({ queryKey: ['cycle'] });
-            // the worker also refreshes the tsdb rollups during derivation
+            // the worker re-derives local-day insights from the raw samples
             queryClient.invalidateQueries({ queryKey: ['biomarkers'] });
           }
         };

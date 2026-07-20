@@ -1,21 +1,37 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 
-import { CyclePhase } from '@feature/cycle-insights/phase';
-import { estimateHormones } from '@feature/cycle-insights/hormones';
+import { classifyCycleDays } from '@feature/cycle-insights/classify';
 
-// controlled classifier output — one day, so `today` is deterministic
-const day = {
-  date: new Date('2026-05-15T00:00:00.000Z'),
-  cycleDay: 15,
-  phase: CyclePhase.OVULATORY,
-  basalTempC: 36.6,
-  restingHrBpm: 60,
-  hrvRmssdMs: 70,
-  readiness: 82,
-  hormones: estimateHormones(15),
-};
+const stats = [
+  {
+    day: '2026-05-15T00:00:00.000Z',
+    metric: 'skin_temp' as const,
+    avg: 36.6,
+    min: 36.5,
+    max: 36.7,
+    count: 1,
+  },
+  {
+    day: '2026-05-15T00:00:00.000Z',
+    metric: 'heart_rate' as const,
+    avg: 60,
+    min: 60,
+    max: 60,
+    count: 1,
+  },
+  {
+    day: '2026-05-15T00:00:00.000Z',
+    metric: 'hrv' as const,
+    avg: 70,
+    min: 70,
+    max: 70,
+    count: 1,
+  },
+];
+const day = classifyCycleDays(
+  stats.map((stat) => ({ ...stat, day: new Date(stat.day) })),
+)[0];
 
-const classifyCycleDays = mock(() => [day]);
 const generateHealthInsightDrafts = mock(async () => [
   {
     key: 'fertile-window-open',
@@ -26,7 +42,6 @@ const generateHealthInsightDrafts = mock(async () => [
   },
 ]);
 
-mock.module('@feature/cycle-insights/classify', () => ({ classifyCycleDays }));
 mock.module('@feature/cycle-insights/ai-insights', () => ({
   generateHealthInsightDrafts,
 }));
@@ -84,7 +99,7 @@ describe('ClassifyAndUpsertHealthInsightsCommandHandler', () => {
     const handler = new ClassifyAndUpsertHealthInsightsCommandHandler(prisma);
 
     const result = await handler.execute(
-      new ClassifyAndUpsertHealthInsightsCommand(event, []),
+      new ClassifyAndUpsertHealthInsightsCommand(event, stats),
     );
 
     expect(generateHealthInsightDrafts).toHaveBeenCalledTimes(1);
@@ -99,7 +114,7 @@ describe('ClassifyAndUpsertHealthInsightsCommandHandler', () => {
     const handler = new ClassifyAndUpsertHealthInsightsCommandHandler(prisma);
 
     await handler.execute(
-      new ClassifyAndUpsertHealthInsightsCommand(event, []),
+      new ClassifyAndUpsertHealthInsightsCommand(event, stats),
     );
 
     expect(healthDeleteMany).toHaveBeenCalledTimes(1);
@@ -125,7 +140,7 @@ describe('ClassifyAndUpsertHealthInsightsCommandHandler', () => {
     const handler = new ClassifyAndUpsertHealthInsightsCommandHandler(prisma);
 
     const result = await handler.execute(
-      new ClassifyAndUpsertHealthInsightsCommand(event, []),
+      new ClassifyAndUpsertHealthInsightsCommand(event, stats),
     );
 
     expect(generateHealthInsightDrafts).not.toHaveBeenCalled();
@@ -142,7 +157,7 @@ describe('ClassifyAndUpsertHealthInsightsCommandHandler', () => {
     const handler = new ClassifyAndUpsertHealthInsightsCommandHandler(prisma);
 
     const result = await handler.execute(
-      new ClassifyAndUpsertHealthInsightsCommand(event, []),
+      new ClassifyAndUpsertHealthInsightsCommand(event, stats),
     );
 
     expect(healthDeleteMany).not.toHaveBeenCalled();

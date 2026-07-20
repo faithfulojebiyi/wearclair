@@ -2,7 +2,7 @@
 // metrics. Deliberately simple but directionally faithful — the luteal progesterone
 // rise shows up as +0.4 °C skin temp, +4 bpm resting HR, −12% HRV; ovulation is
 // preceded by a small temperature nadir. These are the signatures the classifier in
-// @feature/cycle-insights is built to recover from the rollups.
+// @feature/cycle-insights is built to recover from per-day summaries.
 
 import { BiomarkerMetric } from '@system/timeseries/timeseries.schema';
 

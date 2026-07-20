@@ -17,6 +17,7 @@ export const store: Store = createStore()
 
 export const LATEST_TABLE = 'latest';
 export const QUEUE_TABLE = 'queue';
+export const SYNC_ISSUES_TABLE = 'sync_issues';
 
 // retention limits must hold while the app RUNS, not just across restarts — an
 // offline app kept open would otherwise grow past them. pruning scans the queue,
@@ -50,6 +51,10 @@ export interface QueuedSample {
   value: number;
 }
 
+export interface SyncIssue extends QueuedSample {
+  reason: string;
+}
+
 export const getQueued = (): QueuedSample[] =>
   store.getRowIds(QUEUE_TABLE).map((rowId) => {
     const row = store.getRow(QUEUE_TABLE, rowId);
@@ -61,6 +66,51 @@ export const getQueued = (): QueuedSample[] =>
       value: Number(row.value),
     };
   });
+
+export const getSyncIssues = (): SyncIssue[] =>
+  store.getRowIds(SYNC_ISSUES_TABLE).map((rowId) => {
+    const row = store.getRow(SYNC_ISSUES_TABLE, rowId);
+
+    return {
+      rowId,
+      ts: Number(row.ts),
+      metric: row.metric as BiomarkerMetric,
+      value: Number(row.value),
+      reason: String(row.reason),
+    };
+  });
+
+export const quarantineQueued = (rowIds: string[], reason: string): void => {
+  store.transaction(() => {
+    for (const rowId of rowIds) {
+      const row = store.getRow(QUEUE_TABLE, rowId);
+
+      if (Object.keys(row).length === 0) {
+        continue;
+      }
+
+      store.setRow(SYNC_ISSUES_TABLE, rowId, { ...row, reason });
+      store.delRow(QUEUE_TABLE, rowId);
+    }
+  });
+};
+
+export const retrySyncIssues = (): void => {
+  store.transaction(() => {
+    for (const issue of getSyncIssues()) {
+      store.setRow(QUEUE_TABLE, issue.rowId, {
+        ts: issue.ts,
+        metric: issue.metric,
+        value: issue.value,
+      });
+      store.delRow(SYNC_ISSUES_TABLE, issue.rowId);
+    }
+  });
+};
+
+export const discardSyncIssues = (): void => {
+  store.delTable(SYNC_ISSUES_TABLE);
+};
 
 export const clearQueued = (rowIds: string[], syncedTs: number): void => {
   store.transaction(() => {
@@ -90,9 +140,7 @@ export const pruneQueue = (now: number = Date.now()): void => {
   const kept = rows.filter((row) => row.ts >= cutoff);
   const overflow =
     kept.length > QUEUE_MAX_ROWS
-      ? kept
-          .sort((a, b) => a.ts - b.ts)
-          .slice(0, kept.length - QUEUE_MAX_ROWS)
+      ? kept.sort((a, b) => a.ts - b.ts).slice(0, kept.length - QUEUE_MAX_ROWS)
       : [];
 
   const drop = [...expired, ...overflow];
@@ -115,6 +163,7 @@ export const clearAllLocalData = (): void => {
   store.transaction(() => {
     store.delTables();
     store.delValue('ownerUserId');
+    store.delValue('syncPauseReason');
     store.setValue('connected', false);
     store.setValue('lastEmitTs', 0);
     store.setValue('lastSyncTs', 0);

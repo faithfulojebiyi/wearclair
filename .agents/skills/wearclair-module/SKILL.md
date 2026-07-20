@@ -193,9 +193,8 @@ function (no HTTP request scope); identity travels in the typed event data.
 Device sync durability depends on the existing state machine. Persist `SyncBatch.RECEIVED` before
 the time-series write, attribute raw rows with `batch_id`, then advance through `RAW_WRITTEN`,
 `PUBLISHED`, and worker-owned `PROCESSED`. Preserve the deterministic event ID and recovery sweep;
-do not replace these transitions with an untracked cross-database write. The worker refreshes
-completed continuous-aggregate buckets before reading daily stats and publishes realtime completion
-only after processing.
+do not replace these transitions with an untracked cross-database write. The worker groups raw
+samples by the device-stamped local day and publishes realtime completion only after processing.
 
 ## Build & verify
 
@@ -203,6 +202,8 @@ only after processing.
 bun run prisma:generate            # regenerate the client after schema edits (no migration file!)
 bun run build                      # nest build api && nest build worker — full TS compile / typecheck
 bun run lint                       # eslint --fix
+bun run lint:check                 # non-mutating backend lint; dedicated Mastra excluded
+bun run check:core                 # submission checks; dashboard and dedicated Mastra excluded
 bun run start:dev:api              # api in watch mode
 bun run start:dev:worker           # worker in watch mode
 bun test apps libs timeseries      # bun's test runner

@@ -23,9 +23,9 @@ A wearable is a firehose with a very particular shape. Every sync lands a burst 
 row per metric per timestamp) that is append-only, written once, and never updated. This
 demo ingests 10 metrics on a 5-minute grid (~86k rows per user per 60 days); the real product
 category is 130+ biomarkers at higher cadence, so the raw tier is heading toward billions of
-rows. And almost nobody reads it raw: the app reads hourly/daily rollups for charts, and the
-insight pipeline reads daily aggregates over a ~70-day window. Raw sample reads are the
-exception, not the rule.
+rows. The app reads hourly/daily rollups for charts, while the insight pipeline performs a
+bounded, indexed aggregation of raw samples over a ~70-day device-local window. Product clients
+never receive the unaggregated firehose.
 
 That's the exact workload time-series databases exist for, so I modeled it as one instead of
 forcing it into the relational schema.
@@ -48,19 +48,17 @@ devices re-sync overlapping windows constantly; I wanted idempotency in the stor
 not in application bookkeeping.
 
 **Continuous aggregates** (`0002_continuous_aggregates.sql`). `biomarker_1h` and `biomarker_1d`
-are the tables the product actually reads: charts hit them via
-`apps/api/src/modules/biomarkers/queries/get-series.ts`, and the insight worker loads 70 days of
-daily stats from `biomarker_1d` instead of aggregating millions of raw rows per event. Two
-details I care about:
+serve bucketed chart queries through `apps/api/src/modules/biomarkers/queries/get-series.ts`.
+The classifier deliberately groups raw rows by the device-stamped `local_day`: a fixed UTC
+continuous-aggregate bucket cannot represent each user's calendar day. The indexed 70-day window
+keeps that raw query bounded. Two aggregate details I care about:
 
 - They're declared `materialized_only = false` (a deliberate change from the current default),
   so a sync that just landed shows up in bucketed charts immediately, merged with the
   materialized portion, instead of waiting for the 15-minute refresh.
-- When late data lands in an already-materialized bucket (the *normal* case for a BLE device
-  that reconnects after hours offline), the insight worker explicitly refreshes the completed
-  hourly and daily buckets before loading daily statistics. Scheduled policies still maintain
-  the aggregates, but derivation does not wait for the next policy run or read the current
-  incomplete bucket.
+- Scheduled policies materialize completed buckets for longer chart windows. Classification does
+  not depend on their refresh watermark, so late device data is immediately included in its
+  device-local day.
 
 **Columnstore compression** (`0003_columnstore.sql`). Raw chunks convert to columnstore after a
 7-day hot window, segmented by `(user_id, metric)` and ordered by `ts DESC`, so each user's
@@ -117,7 +115,8 @@ foreign keys) and I chose it anyway. Three reasons:
    connection budget: both api and worker hold a tsdb pool, there's no PgBouncer in front, and
    Postgres backends are process-per-connection, so total demand is `10 × replicas × 2 apps`
    against a `max_connections` that defaults to 100. Ten is ample for this workload (reads are
-   short indexed scans of the rollup views and writes are single batched `unnest` inserts), and
+   short indexed scans of rollup views or bounded local-day windows, and writes are single
+   batched `unnest` inserts), and
    when it saturates, `pg.Pool` queues callers, which is backpressure where I want it (in the
    app) instead of connection exhaustion where I don't (in the database). If the fleet grows
    past what per-process caps can budget, the fix is a pooler in front, not a bigger number here.
@@ -166,7 +165,7 @@ Every device sync publishes one `device/batch.synced` event from the ingest path
 (`apps/api/src/modules/devices/commands/ingest-batch.ts`). From that single event, two very
 different jobs have to happen:
 
-- a **cheap derivation** on every batch: read daily stats from the tsdb rollups, classify
+- a **cheap derivation** on every batch: group raw stats by device-local day, classify
   cycle days, upsert `DailyInsight` rows, mark the batch processed;
 - an **expensive AI generation**: a Claude Opus call (`claude-opus-4-8` via
   `libs/feature/cycle-insights/ai-insights.ts`) that writes the narrative insight cards.
@@ -199,7 +198,7 @@ the same batch as the same event. Belt and suspenders: the derivation is upsert-
 tsdb insert is `ON CONFLICT DO NOTHING`, because dedup-by-id narrows the at-least-once window
 but idempotent handlers are what actually close it.
 
-**Partial retries.** Each numeric pipeline stage is a `step.run()`: refresh rollups, load stats,
+**Partial retries.** Each numeric pipeline stage is a `step.run()`: load stats,
 classify-and-upsert, mark processed. Steps are memoized: if the app-db write fails after the tsdb
 read succeeded, the retry re-runs only the failed step. After the durable stages finish, the
 function publishes the authenticated user's `PROCESSED` status over Inngest Realtime. In BullMQ,
@@ -290,8 +289,8 @@ routes). They build and ship separately (`build:api` / `build:worker` →
 
 ### Why
 
-**Latency isolation.** The worker runs Opus calls that take seconds and rollup scans over 70
-days of data. The API's job is p99 on auth'd reads. In one process those share an event loop
+**Latency isolation.** The worker runs Opus calls that take seconds and bounded local-day scans
+over 70 days of data. The API's job is p99 on auth'd reads. In one process those share an event loop
 and a connection budget; a burst of batch processing shouldn't be able to make sign-in slow.
 This is also why the AI call was moved off the ingest path entirely (the debounced function in
 §2). The split and the debounce solve the same problem at two layers: the process boundary

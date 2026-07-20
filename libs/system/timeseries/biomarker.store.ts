@@ -254,11 +254,10 @@ export class BiomarkerStore {
   }
 
   /**
-   * materialize both rollups up to the current bucket start — never past now, or
-   * the watermark would hide new raw rows from the real-time union. CALL cannot
-   * run inside a transaction.
+   * bulk seeding materializes chart history immediately. Live classification reads
+   * raw local-day rows and never invokes this full-history refresh.
    */
-  async refreshRollups(): Promise<void> {
+  async refreshChartRollups(): Promise<void> {
     await this.pool.query(
       `CALL refresh_continuous_aggregate('biomarker_1h', NULL, time_bucket('1 hour', now()))`,
     );

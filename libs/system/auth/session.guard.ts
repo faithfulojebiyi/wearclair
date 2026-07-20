@@ -11,8 +11,8 @@ import { Reflector } from '@nestjs/core';
 
 import { AlsService } from '@system/als/als.service';
 
-import { auth } from './auth';
 import { IS_PUBLIC_KEY } from './auth.decorators';
+import { BetterAuthService } from './auth.service';
 
 // global guard: every Nest route requires a Better Auth session unless marked @Public().
 // resolves the session into ALS (identity) and attaches it to the request.
@@ -21,6 +21,7 @@ export class SessionGuard implements CanActivate {
   constructor(
     private readonly als: AlsService,
     private readonly reflector: Reflector,
+    private readonly betterAuthService: BetterAuthService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -35,7 +36,7 @@ export class SessionGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<FastifyRequest>();
 
-    const session = await auth.api.getSession({
+    const session = await this.betterAuthService.auth.api.getSession({
       headers: fromNodeHeaders(request.headers),
     });
 

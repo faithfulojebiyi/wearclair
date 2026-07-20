@@ -1,7 +1,7 @@
-// cycle-phase classification + readiness from daily rollups. Pure and deterministic
+// cycle-phase classification + readiness from daily summaries. Pure and deterministic
 // so the whole derivation pipeline is unit-testable without a database. Deliberately
 // independent of @feature/biomarker-sim — the simulator plays "physiology", this lib
-// has to recover the signal from the rollups alone (the same inputs a real device
+// has to recover the signal from summaries alone (the same inputs a real device
 // stream would produce).
 
 import { DailyStat } from '@system/timeseries/biomarker.store';

@@ -5,9 +5,13 @@ import {
   QUEUE_TABLE,
   claimStore,
   clearAllLocalData,
+  discardSyncIssues,
   getQueued,
+  getSyncIssues,
   pruneQueue,
+  quarantineQueued,
   recordVitals,
+  retrySyncIssues,
   store,
 } from './local-store';
 
@@ -50,6 +54,7 @@ describe('local vitals store retention', () => {
 
   it('clearAllLocalData wipes tables and resets counters (sign-out path)', () => {
     recordVitals(Date.now(), vitals);
+    store.setValue('syncPauseReason', 'auth');
     expect(getQueued().length).toBeGreaterThan(0);
 
     clearAllLocalData();
@@ -58,6 +63,7 @@ describe('local vitals store retention', () => {
     expect(store.getRowIds(QUEUE_TABLE).length).toBe(0);
     expect(store.getValue('syncedTotal')).toBe(0);
     expect(store.getValue('connected')).toBe(false);
+    expect(store.getValue('syncPauseReason')).toBeUndefined();
   });
 });
 
@@ -92,5 +98,46 @@ describe('local store account isolation', () => {
     clearAllLocalData();
 
     expect(store.getValue('ownerUserId')).toBeUndefined();
+  });
+});
+
+describe('local sync issues', () => {
+  beforeEach(() => {
+    clearAllLocalData();
+  });
+
+  it('moves permanently rejected readings out of the active queue', () => {
+    recordVitals(Date.now(), vitals);
+    const rowIds = getQueued().map((sample) => sample.rowId);
+
+    quarantineQueued(rowIds, 'Server rejected these readings.');
+
+    expect(getQueued()).toHaveLength(0);
+    expect(getSyncIssues()).toEqual([
+      expect.objectContaining({
+        metric: 'skin_temp',
+        reason: 'Server rejected these readings.',
+      }),
+    ]);
+  });
+
+  it('can retry or discard quarantined readings', () => {
+    recordVitals(Date.now(), vitals);
+    quarantineQueued(
+      getQueued().map((sample) => sample.rowId),
+      'Server rejected these readings.',
+    );
+
+    retrySyncIssues();
+    expect(getQueued()).toHaveLength(1);
+    expect(getSyncIssues()).toHaveLength(0);
+
+    quarantineQueued(
+      getQueued().map((sample) => sample.rowId),
+      'Server rejected these readings.',
+    );
+    discardSyncIssues();
+    expect(getQueued()).toHaveLength(0);
+    expect(getSyncIssues()).toHaveLength(0);
   });
 });

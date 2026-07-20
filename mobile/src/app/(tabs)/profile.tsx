@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRowIds, useValue } from 'tinybase/ui-react';
@@ -15,8 +14,14 @@ import { performSignOut } from '@/modules/auth/sign-out';
 import { connectBand, disconnectBand } from '@/modules/band/band';
 import { DeviceCard } from '@/modules/band/components/device-card';
 import { PipelineExplainer } from '@/modules/band/components/pipeline-explainer';
+import { SyncIssues } from '@/modules/band/components/sync-issues';
 import { SyncStats } from '@/modules/band/components/sync-stats';
-import { QUEUE_TABLE } from '@/modules/band/local-store';
+import {
+  QUEUE_TABLE,
+  SYNC_ISSUES_TABLE,
+  discardSyncIssues,
+  retrySyncIssues,
+} from '@/modules/band/local-store';
 import { useRegisterDevice } from '@/modules/band/mutations/use-register-device';
 import { useDevices } from '@/modules/band/queries/use-devices';
 import { Card, InnerCard } from '@/ui/primitives/ui';
@@ -28,8 +33,14 @@ export default function DeviceScreen() {
 
   const connected = Boolean(useValue('connected'));
   const queued = useRowIds(QUEUE_TABLE).length;
+  const issueCount = useRowIds(SYNC_ISSUES_TABLE).length;
   const lastSyncTs = Number(useValue('lastSyncTs') ?? 0);
   const syncedTotal = Number(useValue('syncedTotal') ?? 0);
+  const syncPauseValue = useValue('syncPauseReason');
+  const syncPauseReason =
+    syncPauseValue === 'auth' || syncPauseValue === 'device'
+      ? syncPauseValue
+      : undefined;
 
   const devices = useDevices();
   const device = devices.data?.devices[0];
@@ -76,12 +87,22 @@ export default function DeviceScreen() {
             <Pressable
               disabled={register.isPending}
               onPress={() => register.mutate()}
-              style={({ pressed }) => [styles.connectButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.connectButton,
+                pressed && styles.pressed,
+              ]}
             >
               <Text style={styles.connectText}>Pair Clair Band</Text>
             </Pressable>
           </Card>
         )}
+
+        <SyncIssues
+          issueCount={issueCount}
+          onDiscard={discardSyncIssues}
+          onRetry={retrySyncIssues}
+          pauseReason={syncPauseReason}
+        />
 
         <PipelineExplainer />
 

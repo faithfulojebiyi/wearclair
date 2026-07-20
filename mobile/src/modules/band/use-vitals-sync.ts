@@ -2,7 +2,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 
 import { devicesControllerSyncDevice } from '@/api/generated/devices/devices';
-import { clearQueued, getQueued, store } from './local-store';
+import { clearQueued, getQueued, quarantineQueued, store } from './local-store';
+import { decideSyncFailure, syncErrorDetails } from './sync-policy';
 import { batchKeyFor } from './utils';
 
 const FLUSH_MS = 8000;
@@ -28,15 +29,22 @@ const deviceTimezone = (): string | undefined => {
 export const useVitalsSync = (
   deviceId: string | undefined,
   userId: string | undefined,
+  refreshSession?: () => void | Promise<unknown>,
 ): void => {
   const queryClient = useQueryClient();
   const inFlight = useRef(false);
   const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttempt = useRef(0);
+  const nextAttemptAt = useRef(0);
 
   useEffect(() => {
     if (!deviceId || !userId) {
       return;
     }
+
+    retryAttempt.current = 0;
+    nextAttemptAt.current = 0;
+    store.delValue('syncPauseReason');
 
     /**
      * derived views are computed AFTER the sync response — the realtime signal
@@ -55,6 +63,13 @@ export const useVitalsSync = (
 
     const flush = async () => {
       if (inFlight.current) {
+        return;
+      }
+
+      if (
+        store.getValue('syncPauseReason') !== undefined ||
+        Date.now() < nextAttemptAt.current
+      ) {
         return;
       }
 
@@ -91,14 +106,39 @@ export const useVitalsSync = (
           queued.map((sample) => sample.rowId),
           Date.now(),
         );
+        retryAttempt.current = 0;
+        nextAttemptAt.current = 0;
 
         // raw-backed views update synchronously with the ingest write
         queryClient.invalidateQueries({ queryKey: ['biomarkers'] });
         queryClient.invalidateQueries({ queryKey: ['devices'] });
 
         scheduleDerivedRefetch();
-      } catch {
-        // keep the rows queued; next tick retries (offline-tolerant)
+      } catch (error) {
+        const decision = decideSyncFailure(
+          syncErrorDetails(error),
+          retryAttempt.current + 1,
+        );
+
+        if (decision.kind === 'retry') {
+          retryAttempt.current += 1;
+          nextAttemptAt.current = Date.now() + decision.delayMs;
+        } else if (decision.kind === 'pause') {
+          store.setValue('syncPauseReason', decision.reason);
+
+          if (decision.reason === 'auth') {
+            void refreshSession?.();
+          } else {
+            queryClient.invalidateQueries({ queryKey: ['devices'] });
+          }
+        } else {
+          quarantineQueued(
+            queued.map((sample) => sample.rowId),
+            decision.reason,
+          );
+          retryAttempt.current = 0;
+          nextAttemptAt.current = 0;
+        }
       } finally {
         inFlight.current = false;
       }
@@ -114,5 +154,5 @@ export const useVitalsSync = (
         fallbackTimer.current = null;
       }
     };
-  }, [deviceId, userId, queryClient]);
+  }, [deviceId, userId, queryClient, refreshSession]);
 };

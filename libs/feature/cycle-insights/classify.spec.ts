@@ -14,7 +14,7 @@ import { CyclePhase } from './phase';
 const USER_ID = 'test-user-1';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// replicate the biomarker_1d rollup in memory: samples -> per-(day, metric) stats
+// reproduce the classifier boundary in memory: samples -> per-(day, metric) stats
 const toDailyStats = (samples: RawSample[]): DailyStat[] => {
   const groups = new Map<
     string,
@@ -60,7 +60,7 @@ describe('classifyCycleDays', () => {
     expect(second).toEqual(first);
   });
 
-  it('recovers the luteal temperature shift from rollups alone', () => {
+  it('recovers the luteal temperature shift from daily summaries alone', () => {
     const insights = classifyCycleDays(stats);
 
     // skip the classifier's warm-up (needs 10 days of temp history for the

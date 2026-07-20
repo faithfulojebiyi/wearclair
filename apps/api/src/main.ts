@@ -6,7 +6,7 @@ import { Logger } from 'nestjs-pino';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { v7 as uuidv7 } from 'uuid';
 
-import { auth } from '@system/auth/auth';
+import { BetterAuthService } from '@system/auth/auth.service';
 import { parseTrustProxy } from '@system/env/trust-proxy';
 
 import { ConfigService } from '@nestjs/config';
@@ -101,6 +101,7 @@ async function bootstrap() {
   const fastifyInstance = app.getHttpAdapter().getInstance();
   const apiService = app.get(ApiService);
   const commandBus = app.get(CommandBus);
+  const auth = app.get(BetterAuthService).auth;
 
   // mount Better Auth (handles /api/auth/*) on the underlying fastify instance —
   // a raw route bypasses the Nest pipe/interceptor/guard stack.

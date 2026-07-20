@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { IconBox } from '@/ui/primitives/ui';
@@ -45,7 +45,9 @@ export const CategoryBlock = ({
 
               onChange(
                 joinValue(
-                  on ? selected.filter((s) => s !== option) : [...selected, option],
+                  on
+                    ? selected.filter((s) => s !== option)
+                    : [...selected, option],
                 ),
               );
             };
@@ -76,11 +78,6 @@ const DiaryInput = ({
   onChange: (value: string) => void;
 }) => {
   const [draft, setDraft] = useState(value);
-
-  // resync when the day (and thus value) changes
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
 
   return (
     <TextInput
@@ -128,7 +125,9 @@ const ListInput = ({
           {selected.map((item) => (
             <Pressable
               key={item}
-              onPress={() => onChange(joinValue(selected.filter((s) => s !== item)))}
+              onPress={() =>
+                onChange(joinValue(selected.filter((s) => s !== item)))
+              }
               style={[styles.chip, styles.chipOn]}
             >
               <Text style={[styles.chipText, styles.chipTextOn]}>{item} ✕</Text>

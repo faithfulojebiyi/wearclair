@@ -13,7 +13,7 @@ import { generateSamples } from '@feature/biomarker-sim/generator';
 import { classifyCycleDays } from '@feature/cycle-insights/classify';
 import { CyclePhase } from '@feature/cycle-insights/phase';
 import { buildHealthInsightDrafts } from '@feature/cycle-insights/health-insights';
-import { auth } from '@system/auth/auth';
+import { createAuth } from '@system/auth/auth';
 import { BiomarkerStore } from '@system/timeseries/biomarker.store';
 import { TsdbPool } from '@system/timeseries/timeseries.pool';
 
@@ -63,7 +63,10 @@ const phaseLogsFor = (cycleDay: number): { type: string; value: string }[] => {
   }
 
   if (cycleDay === 21) {
-    logs.push({ type: 'diary', value: 'Steady week — sleeping well, calm energy.' });
+    logs.push({
+      type: 'diary',
+      value: 'Steady week — sleeping well, calm energy.',
+    });
   }
 
   if (cycleDay === 25) {
@@ -91,6 +94,7 @@ const prisma = new PrismaClient({
 
 const pool = new TsdbPool();
 const store = new BiomarkerStore(pool);
+const auth = createAuth(prisma);
 
 try {
   // 1. demo user (better auth owns password hashing — sign up through it)
@@ -134,7 +138,7 @@ try {
 
   // 4. materialize the rollups now so charts have history immediately — stops at
   //    the current bucket start so the watermark never hides later live syncs
-  await store.refreshRollups();
+  await store.refreshChartRollups();
 
   // 5. derive insights directly (same pure classifier the worker uses — no queue
   //    round-trip needed for seeding)

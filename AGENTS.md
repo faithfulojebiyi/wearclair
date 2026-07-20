@@ -48,6 +48,8 @@ bun run inngest:dev             # local Inngest dev server (UI on http://localho
 bun run infra:up                # ministack AWS emulator (S3 etc.) on http://127.0.0.1:4567 + bucket init
 bun run infra:down              # stop it · bun run infra:logs tails it
 bun run lint                    # eslint --fix
+bun run lint:check              # non-mutating backend lint; dedicated Mastra excluded
+bun run check:core              # submission checks; dashboard and dedicated Mastra excluded
 bun run format                  # prettier
 bun test apps libs timeseries   # bun's test runner
 ```
@@ -137,8 +139,8 @@ Device ingest is a deliberate cross-database state machine: persist `SyncBatch.R
 Timescale rows attributed with `batch_id`, advance through `RAW_WRITTEN` and `PUBLISHED`, then let the
 worker mark `PROCESSED`. Publish with the deterministic `device-batch-<batchId>` event ID. The API
 recovery sweep reconciles interrupted `RECEIVED` writes and republishes due `RAW_WRITTEN` batches, so
-do not bypass the state transitions or batch attribution. The worker refreshes completed continuous-
-aggregate buckets before daily reads and emits the user's realtime completion only after processing.
+do not bypass the state transitions or batch attribution. The worker groups raw samples by the
+device-stamped local day and emits the user's realtime completion only after processing.
 
 ## Environment
 

@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useValue } from 'tinybase/ui-react';
 
 import { disconnectBand } from './band';
 import { claimStore, initPersistence } from './local-store';
@@ -16,7 +17,7 @@ export const useAccountIsolation = (
   sessionResolved: boolean,
 ): boolean => {
   const queryClient = useQueryClient();
-  const [claimedFor, setClaimedFor] = useState<string | null>(null);
+  const ownerUserId = useValue('ownerUserId');
 
   useEffect(() => {
     if (!sessionResolved) {
@@ -26,7 +27,6 @@ export const useAccountIsolation = (
     if (!userId) {
       disconnectBand();
       queryClient.clear();
-      setClaimedFor(null);
 
       return;
     }
@@ -45,8 +45,6 @@ export const useAccountIsolation = (
         disconnectBand();
         queryClient.clear();
       }
-
-      setClaimedFor(userId);
     });
 
     return () => {
@@ -54,5 +52,5 @@ export const useAccountIsolation = (
     };
   }, [userId, sessionResolved, queryClient]);
 
-  return claimedFor === userId;
+  return ownerUserId === userId;
 };
