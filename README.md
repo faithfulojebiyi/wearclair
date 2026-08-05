@@ -14,7 +14,15 @@ The repository contains a Fastify/NestJS API, a background worker, shared domain
 | :--: | :--: | :--: |
 | ![Home — hormone dashboard](./assets/images/1-home.png) | ![Vitals — live biomarker grid](./assets/images/2-vitals.png) | ![Health insights](./assets/images/9-insights.png) |
 
-The Expo app shows the continuous hormone dashboard, the live biomarker grid, and AI-generated health insights. → [Browse all screenshots](./assets/images) (calendar, timeline, period tracking, performance, and the BLE sync simulator).
+| Calendar | Timeline | Edit period |
+| :--: | :--: | :--: |
+| ![Calendar — cycle view](./assets/images/3-Calendar%20cycle.png) | ![Timeline — daily biomarker history](./assets/images/4-timeline.png) | ![Edit period dates](./assets/images/5-edit%20period.png) |
+
+| Add note | Performance | BLE sync simulator |
+| :--: | :--: | :--: |
+| ![Add a cycle note](./assets/images/6-add%20note%20.png) | ![Performance — readiness and training](./assets/images/7-preformance.png) | ![Simulate a BLE device sync](./assets/images/8-simulate-ble-sync.png) |
+
+The Expo app shows the continuous hormone dashboard, the live biomarker grid, AI-generated health insights, cycle calendar and timeline, period and note editing, performance readiness, and the BLE sync simulator used in place of real hardware.
 
 ## Architecture at a glance
 
